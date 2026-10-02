@@ -1,5 +1,7 @@
 # FarmHQ
 
+> Current application milestone: **v0.3.0**
+
 **FarmHQ is the operating system for modern farm businesses.**
 
 FarmHQ is a multi-tenant SaaS foundation for commercial crop, livestock, poultry, aquaculture and mixed-farm operations. The data model is centered on a simple operational chain:
@@ -191,14 +193,32 @@ SET LOCAL app.tenant_id = '<tenant-id>';
 
 Do not enable the RLS policies until the deployment's database transaction/session strategy sets this value reliably.
 
+## v0.3.0 additions
+
+- Interactive MapLibre farm map with editable GeoJSON production-unit boundaries
+- Farm latitude/longitude management
+- Open-Meteo seven-day farm forecasts with server-side caching
+- Warehouse-to-warehouse stock transfers
+- Physical stock counts with automatic variance adjustments into the inventory ledger
+- Compliance / certification / inspection register
+- Chemical application register with PHI and REI fields
+- Evidence/document URL register with expiry dates
+- Tenant automation rules and notification inbox
+- Hourly Vercel cron evaluation endpoint protected by `CRON_SECRET`
+- Installable PWA shell and offline fallback page
+- Multi-file Prisma schema organization
+- GitHub Actions validation for Prisma generation, TypeScript and ESLint
+
+The web PWA currently caches only the public application shell. Offline authenticated data capture and queued write synchronization are intentionally not claimed as complete yet.
+
 ## Next build layers
 
 The major remaining product layers are:
 
-1. GIS map editor, spatial queries and PostGIS field boundary operations
-2. Weather forecasts/history and farm-specific alerts
+1. PostGIS-native spatial queries, geofencing and automatic polygon area calculation
+2. Historical weather, rainfall accumulation and weather-triggered operational recommendations
 3. Satellite imagery / NDVI integrations
-4. Full inventory transfer workflow and stock counts
+4. Lot-level transfer workflow, stock count sessions and barcode scanning
 5. Multi-line RFQ/quotation comparison and procurement approval rules
 6. Dispatch, invoices, receivables and accounting integrations
 7. Livestock breeding genealogy, milk records and medication withdrawal periods
