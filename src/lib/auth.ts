@@ -3,7 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
-import type { Role } from "@/generated/prisma/client";
+import type { Prisma, Role } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 
 const COOKIE = "farmhq_session";
@@ -67,7 +67,7 @@ export async function requireSession() {
   return { session: { ...session, role: membership.role }, membership };
 }
 
-export async function audit(action: string, entityType: string, entityId?: string, metadata?: Record<string, unknown>) {
+export async function audit(action: string, entityType: string, entityId?: string, metadata?: Prisma.InputJsonValue) {
   const session = await getSession();
   if (!session) return;
   await db.auditLog.create({
