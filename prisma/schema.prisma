@@ -585,7 +585,7 @@ model CropActivity {
   notes       String?
   tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   farm        Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  productionUnit ProductionUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  unit        ProductionUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
   cycle       ProductionCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -635,7 +635,7 @@ model HarvestRecord {
   notes       String?
   tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   farm        Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  unit        ProductionUnit?  @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  productionUnit ProductionUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
   cycle       ProductionCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   createdAt   DateTime         @default(now())
 
