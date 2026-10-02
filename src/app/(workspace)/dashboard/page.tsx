@@ -9,7 +9,7 @@ export const metadata = { title: "Overview" };
 
 export default async function Dashboard() {
   const ctx = await tenantContext();
-  const [farms, area, activeCycles, openTasks, expenseAgg, revenueAgg, recentTasks, recentCycles, products, txns, criticalObservations, pendingRequests] = await Promise.all([
+  const [farms, area, activeCycles, expenseAgg, revenueAgg, recentTasks, recentCycles, products, txns, criticalObservations, pendingRequests] = await Promise.all([
     db.farm.count({ where: { tenantId: ctx.tenantId, active: true } }),
     db.productionUnit.aggregate({ where: { tenantId: ctx.tenantId, active: true }, _sum: { areaHa: true } }),
     db.productionCycle.count({ where: { tenantId: ctx.tenantId, status: "ACTIVE" } }),
