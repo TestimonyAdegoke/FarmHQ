@@ -13,7 +13,6 @@ export default async function Dashboard() {
     db.farm.count({ where: { tenantId: ctx.tenantId, active: true } }),
     db.productionUnit.aggregate({ where: { tenantId: ctx.tenantId, active: true }, _sum: { areaHa: true } }),
     db.productionCycle.count({ where: { tenantId: ctx.tenantId, status: "ACTIVE" } }),
-    db.task.count({ where: { tenantId: ctx.tenantId, status: { in: ["TODO","IN_PROGRESS","BLOCKED"] } } }),
     db.expense.aggregate({ where: { tenantId: ctx.tenantId, status: { in: ["APPROVED","PAID"] } }, _sum: { amount: true } }),
     db.revenue.aggregate({ where: { tenantId: ctx.tenantId }, _sum: { amount: true } }),
     db.task.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["TODO","IN_PROGRESS","BLOCKED"] } }, include: { farm: true, assignedTo: true }, orderBy: [{ priority:"desc" },{ dueAt:"asc" }], take: 6 }),
