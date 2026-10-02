@@ -93,8 +93,9 @@ export async function saveUnitGeometryAction(form: FormData) {
   const [firstLng, firstLat] = ring[0];
   const [lastLng, lastLat] = ring[ring.length - 1];
   if (firstLng !== lastLng || firstLat !== lastLat) throw new Error("GeoJSON polygon must be closed");
-  await db.productionUnit.update({ where: { id: unitId }, data: { geometryGeoJson: parsed } });
-  await audit("unit.geometry.update", "ProductionUnit", unitId, { vertices: ring.length - 1 });
+  const areaHa = numberValue(form, "areaHa");
+  await db.productionUnit.update({ where: { id: unitId }, data: { geometryGeoJson: parsed, areaHa } });
+  await audit("unit.geometry.update", "ProductionUnit", unitId, { vertices: ring.length - 1, areaHa });
   revalidatePath("/maps");
   revalidatePath("/fields");
 }
