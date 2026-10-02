@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: farmhq
+      POSTGRES_USER: farmhq
+      POSTGRES_PASSWORD: farmhq
+    ports:
+      - "5432:5432"
+    volumes:
+      - farmhq_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmhq -d farmhq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  farmhq_postgres:
