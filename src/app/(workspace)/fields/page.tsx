@@ -1,4 +1,4 @@
-import { Grid3X3, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { createUnitAction } from "@/app/actions";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
