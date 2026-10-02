@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl, { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { Save, Trash2, Undo2 } from "lucide-react";
 import { saveUnitGeometryAction } from "@/app/v03-actions";
 
@@ -80,7 +81,7 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
       map.addLayer({ id: "edited-line", type: "line", source: "edited-unit", paint: { "line-color": "#154c31", "line-width": 3 } });
       map.addLayer({ id: "edited-points", type: "circle", source: "edited-unit", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#154c31", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
     });
-    map.on("click", (event) => {
+    map.on("click", (event: MapMouseEvent) => {
       if (!editingRef.current) return;
       setPoints((current) => [...current, [event.lngLat.lng, event.lngLat.lat]]);
     });
