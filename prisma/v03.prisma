@@ -1,0 +1,144 @@
+enum StockCountStatus {
+  COMPLETED
+}
+
+enum ComplianceRecordType {
+  INSPECTION
+  CERTIFICATION
+  AUDIT
+  INCIDENT
+  TRAINING
+  OTHER
+}
+
+enum ComplianceStatus {
+  OPEN
+  COMPLIANT
+  ACTION_REQUIRED
+  EXPIRED
+  CLOSED
+}
+
+enum AutomationTrigger {
+  LOW_STOCK
+  TASK_OVERDUE
+  SCOUTING_HIGH
+  EQUIPMENT_SERVICE_DUE
+}
+
+enum AutomationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model StockCount {
+  id                String           @id @default(cuid())
+  tenantId          String
+  warehouseId       String
+  productId         String
+  countedQuantity   Decimal          @db.Decimal(14, 3)
+  systemQuantity    Decimal          @db.Decimal(14, 3)
+  variance          Decimal          @db.Decimal(14, 3)
+  status            StockCountStatus @default(COMPLETED)
+  countedAt         DateTime         @default(now())
+  countedById       String
+  notes             String?
+  adjustmentTxnId   String?
+  createdAt         DateTime         @default(now())
+
+  @@index([tenantId, countedAt])
+  @@index([warehouseId, productId])
+}
+
+model ComplianceRecord {
+  id          String               @id @default(cuid())
+  tenantId    String
+  farmId      String?
+  type        ComplianceRecordType
+  status      ComplianceStatus     @default(OPEN)
+  title       String
+  authority   String?
+  reference   String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  notes       String?
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([tenantId, status])
+  @@index([farmId, dueAt])
+}
+
+model ChemicalApplication {
+  id               String   @id @default(cuid())
+  tenantId         String
+  farmId           String
+  unitId           String?
+  cycleId          String?
+  productName      String
+  activeIngredient String?
+  quantity         Decimal  @db.Decimal(14, 3)
+  unit             String
+  ratePerHa        Decimal? @db.Decimal(14, 3)
+  applicationDate  DateTime @default(now())
+  operator         String?
+  phiDays          Int?
+  reiHours         Int?
+  weatherNote      String?
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, applicationDate])
+  @@index([farmId, cycleId])
+}
+
+model DocumentRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  farmId      String?
+  cycleId     String?
+  category    String
+  title       String
+  fileUrl     String
+  expiresAt   DateTime?
+  notes       String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, category])
+  @@index([farmId, expiresAt])
+}
+
+model AutomationRule {
+  id        String             @id @default(cuid())
+  tenantId  String
+  name      String
+  trigger   AutomationTrigger
+  severity  AutomationSeverity @default(WARNING)
+  threshold Decimal?           @db.Decimal(14, 3)
+  active    Boolean            @default(true)
+  createdById String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([tenantId, active])
+}
+
+model Notification {
+  id         String             @id @default(cuid())
+  tenantId   String
+  ruleId     String?
+  severity   AutomationSeverity @default(INFO)
+  title      String
+  body       String
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime           @default(now())
+
+  @@index([tenantId, readAt, createdAt])
+  @@index([ruleId, entityType, entityId])
+}
