@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Bird, Boxes, ClipboardCheck, Cog, DollarSign, Fish, Grid3X3, HardHat, LayoutDashboard, Leaf, PackageOpen, ShoppingBag, ShoppingCart, Sprout, Tractor, TrendingUp, Users, Warehouse } from "lucide-react";
+import { BarChart3, BellRing, Bird, Boxes, ClipboardCheck, CloudSun, Cog, DollarSign, FileCheck2, Fish, Grid3X3, HardHat, LayoutDashboard, Leaf, MapPinned, PackageOpen, PackageSearch, ShoppingBag, ShoppingCart, Sprout, Tractor, TrendingUp, Users, Warehouse } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { logoutAction, switchTenantAction } from "@/app/actions";
 
@@ -7,6 +7,8 @@ const links = [
   ["/dashboard", "Overview", LayoutDashboard],
   ["/farms", "Farms", Sprout],
   ["/fields", "Fields & Units", Grid3X3],
+  ["/maps", "Farm Maps", MapPinned],
+  ["/weather", "Weather", CloudSun],
   ["/production", "Production", BarChart3],
   ["/crop-operations", "Crop Operations", Leaf],
   ["/poultry", "Poultry", Bird],
@@ -14,12 +16,15 @@ const links = [
   ["/livestock", "Livestock", PackageOpen],
   ["/tasks", "Work & Tasks", ClipboardCheck],
   ["/inventory", "Inventory", Warehouse],
+  ["/stock-control", "Stock Control", PackageSearch],
   ["/procurement", "Procurement", ShoppingCart],
   ["/sales", "Sales", ShoppingBag],
   ["/finance", "Finance", DollarSign],
   ["/profitability", "Profitability", TrendingUp],
   ["/equipment", "Equipment", Tractor],
   ["/workforce", "Workforce", HardHat],
+  ["/compliance", "Compliance", FileCheck2],
+  ["/automations", "Automations", BellRing],
   ["/team", "Team", Users],
   ["/analytics", "Analytics", Boxes],
   ["/settings", "Settings", Cog],
