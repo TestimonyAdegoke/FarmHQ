@@ -48,6 +48,7 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
   const [points, setPoints] = useState<Coordinate[]>(() => extractPoints(unit.geometryGeoJson));
   const [editing, setEditing] = useState(false);
   const polygon = useMemo(() => polygonFromCoordinates(points), [points]);
+  const initialPointsRef = useRef(points);
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
@@ -70,7 +71,11 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
       map.addSource("other-units", { type: "geojson", data: { type: "FeatureCollection", features } });
       map.addLayer({ id: "other-fill", type: "fill", source: "other-units", paint: { "fill-color": "#1f6b45", "fill-opacity": 0.12 } });
       map.addLayer({ id: "other-line", type: "line", source: "other-units", paint: { "line-color": "#1f6b45", "line-width": 1.5 } });
-      map.addSource("edited-unit", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      const initialPolygon = polygonFromCoordinates(initialPointsRef.current);
+      const initialFeatures: GeoJSON.Feature[] = [];
+      if (initialPolygon) initialFeatures.push({ type: "Feature", properties: {}, geometry: initialPolygon });
+      for (const point of initialPointsRef.current) initialFeatures.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: point } });
+      map.addSource("edited-unit", { type: "geojson", data: { type: "FeatureCollection", features: initialFeatures } });
       map.addLayer({ id: "edited-fill", type: "fill", source: "edited-unit", paint: { "fill-color": "#c7e66b", "fill-opacity": 0.34 } });
       map.addLayer({ id: "edited-line", type: "line", source: "edited-unit", paint: { "line-color": "#154c31", "line-width": 3 } });
       map.addLayer({ id: "edited-points", type: "circle", source: "edited-unit", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#154c31", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
