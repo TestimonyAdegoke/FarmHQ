@@ -811,7 +811,7 @@ export async function fulfillSalesOrderAction(form: FormData) {
     where: { id, tenantId: session.tenantId },
     include: { items: true, customer: true },
   });
-  if (!order || [SalesOrderStatus.FULFILLED, SalesOrderStatus.INVOICED, SalesOrderStatus.CANCELLED].includes(order.status)) throw new Error("Sales order cannot be fulfilled");
+  if (!order || order.status === SalesOrderStatus.FULFILLED || order.status === SalesOrderStatus.INVOICED || order.status === SalesOrderStatus.CANCELLED) throw new Error("Sales order cannot be fulfilled");
   const total = order.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
   await db.$transaction(async (tx) => {
     if (order.warehouseId) {
