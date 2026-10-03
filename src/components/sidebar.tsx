@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, BellRing, Bird, Boxes, ClipboardCheck, CloudSun, Cog, DollarSign, FileCheck2, Fish, Grid3X3, HardHat, LayoutDashboard, Leaf, MapPinned, PackageOpen, PackageSearch, ShoppingBag, ShoppingCart, Sprout, Tractor, TrendingUp, Users, Warehouse } from "lucide-react";
+import { BarChart3, BellRing, Bird, Boxes, ClipboardCheck, CloudSun, Cog, DollarSign, FileCheck2, Fish, Grid3X3, HardHat, LayoutDashboard, Leaf, MapPinned, PackageOpen, PackageSearch, QrCode, RadioTower, ShoppingBag, ShoppingCart, Smartphone, Sprout, Tractor, TrendingUp, Users, Warehouse } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { logoutAction, switchTenantAction } from "@/app/actions";
 
@@ -17,6 +17,7 @@ const links = [
   ["/tasks", "Work & Tasks", ClipboardCheck],
   ["/inventory", "Inventory", Warehouse],
   ["/stock-control", "Stock Control", PackageSearch],
+  ["/traceability", "Traceability", QrCode],
   ["/procurement", "Procurement", ShoppingCart],
   ["/sales", "Sales", ShoppingBag],
   ["/finance", "Finance", DollarSign],
@@ -24,6 +25,8 @@ const links = [
   ["/equipment", "Equipment", Tractor],
   ["/workforce", "Workforce", HardHat],
   ["/compliance", "Compliance", FileCheck2],
+  ["/iot", "IoT & Sensors", RadioTower],
+  ["/field", "Field App", Smartphone],
   ["/automations", "Automations", BellRing],
   ["/team", "Team", Users],
   ["/analytics", "Analytics", Boxes],
