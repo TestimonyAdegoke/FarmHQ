@@ -78,7 +78,7 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
   const [queueCount,setQueueCount] = useState(0);
   const [message,setMessage] = useState("Ready for field capture.");
   const [location,setLocation] = useState<{latitude:number;longitude:number}|null>(null);
-  const [online,setOnline] = useState(true);
+  const [online,setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
 
   const availableUnits = useMemo(()=>units.filter(unit=>unit.farmId===farmId),[units,farmId]);
   const availableCycles = useMemo(()=>cycles.filter(cycle=>cycle.farmId===farmId),[cycles,farmId]);
