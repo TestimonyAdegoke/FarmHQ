@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && if [ \"$VERCEL_ENV\" = \"production\" ]; then prisma db push && node scripts/apply-postgis.mjs; fi && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
