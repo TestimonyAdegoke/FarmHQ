@@ -55,7 +55,7 @@ model StockCountLine {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  @@unique([sessionId, productId, lotNumber])
+  @@unique([sessionId, productId])
   @@index([tenantId, productId])
 }
 
