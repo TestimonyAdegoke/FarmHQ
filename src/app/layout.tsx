@@ -6,11 +6,17 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 
 const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
-const serif = Fraunces({ subsets: ["latin"], variable: "--font-serif", display: "swap", axes: ["SOFT", "opsz"] });
+const serif = Fraunces({ subsets: ["latin"], variable: "--font-serif", display: "swap", style: ["normal", "italic"], axes: ["SOFT", "opsz"] });
 
 export const metadata: Metadata = {
   title: { default: "FarmHQ", template: "%s · FarmHQ" },
   description: "The operating system for modern farm businesses.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+  },
 };
 
 export const viewport: Viewport = { themeColor: "#2f5d3a" };

@@ -84,7 +84,7 @@ details.form-details > .details-body { padding:18px; }
 /* Documents: invoices, receipts, payslips. Paper-like and printable. */
 .doc { background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg); padding:40px; max-width:920px; }
 .doc-head { display:flex; justify-content:space-between; gap:24px; flex-wrap:wrap; border-bottom:1px solid var(--ink); padding-bottom:20px; margin-bottom:24px; }
-.doc-head h1 { margin:0; font-family:var(--font-serif); font-weight:500; font-size:30px; letter-spacing:-.02em; }
+.doc-head h1 { margin:0; font-weight:600; font-size:28px; letter-spacing:-.03em; }
 .doc-meta { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-bottom:24px; font-size:14px; }
 .doc-meta small { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:600; margin-bottom:4px; }
 .doc table { min-width:0; }
@@ -111,7 +111,7 @@ details.form-details > .details-body { padding:18px; }
 .kv dt:first-of-type, .kv dt:first-of-type + dd { border-top:0; }
 
 .state-card { max-width:520px; margin:48px auto; text-align:center; padding:36px 32px; }
-.state-card h2 { font-family:var(--font-serif); font-weight:500; font-size:24px; margin:0 0 8px; }
+.state-card h2 { font-weight:600; letter-spacing:-.02em; font-size:24px; margin:0 0 8px; }
 .state-card p { color:var(--muted); line-height:1.6; margin:0 0 4px; }
 .state-card .icon-box { margin:0 auto 16px; width:44px; height:44px; }
 .state-card .icon-box.warn { background:var(--warning-soft); color:var(--warning); }
