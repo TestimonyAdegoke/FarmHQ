@@ -1,51 +1,35 @@
 import { CircleDollarSign, Gauge, TrendingUp, WalletCards } from "lucide-react";
+import { DownloadLink } from "@/components/download-link";
 import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
-import { db } from "@/lib/db";
-import { labourCost } from "@/lib/ledger";
+import { PrintButton } from "@/components/print-button";
+import { cycleProfitability } from "@/lib/reports";
 import { tenantContext } from "@/lib/tenant";
 import { formatMoney, formatNumber, humanize } from "@/lib/utils";
 
 export const metadata = { title: "Profitability" };
 
 export default async function ProfitabilityPage() {
-  const ctx=await tenantContext("finance.view");
-  const cycles=await db.productionCycle.findMany({
-    where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},
-    include:{farm:true,unit:true,expenses:true,revenues:true,harvestRecords:true,timesheets:true,equipmentLogs:true,inventoryTxns:{include:{product:true}}},
-    orderBy:{createdAt:"desc"},
-  });
-  const rows=cycles.map(c=>{
-    const direct=c.expenses.filter(e=>["APPROVED","PAID"].includes(e.status)).reduce((s,e)=>s+Number(e.amount),0);
-    const inputs=c.inventoryTxns.filter(t=>["ISSUE","ADJUSTMENT_OUT","WASTE"].includes(t.type)).reduce((s,t)=>s+Number(t.quantity)*Number(t.unitCost||t.product.standardCost||0),0);
-    const labour=c.timesheets.filter(t=>t.status==="APPROVED").reduce((s,t)=>s+labourCost(t),0);
-    const equipment=c.equipmentLogs.reduce((s,l)=>s+Number(l.cost||0),0);
-    const cost=direct+inputs+labour+equipment;
-    const revenue=c.revenues.reduce((s,r)=>s+Number(r.amount),0);
-    const margin=revenue-cost;
-    const budget=Number(c.budgetAmount||0);
-    const units=[...new Set(c.harvestRecords.map(h=>h.unit))];
-    const output=units.length===1?c.harvestRecords.reduce((s,h)=>s+Number(h.quantity),0):0;
-    return {c,direct,inputs,labour,equipment,cost,revenue,margin,budget,output,outputUnit:units.length===1?units[0]:null};
-  });
-  const totalCost=rows.reduce((s,r)=>s+r.cost,0), totalRevenue=rows.reduce((s,r)=>s+r.revenue,0), totalMargin=totalRevenue-totalCost;
-  const marginPct=totalRevenue?totalMargin/totalRevenue*100:0;
+  const ctx = await tenantContext("finance.view");
+  const rows = await cycleProfitability(ctx.tenantId, ctx.farmScope);
+  const totalCost = rows.reduce((s, r) => s + r.cost, 0), totalRevenue = rows.reduce((s, r) => s + r.revenue, 0), totalMargin = totalRevenue - totalCost;
+  const marginPct = totalRevenue ? totalMargin / totalRevenue * 100 : 0;
   const money = (n: number) => formatMoney(n, ctx.tenant.currency);
   return <>
-    <PageHeader eyebrow="Unit economics" title="Production profitability" description="Costs, output and revenue side by side for every production cycle." />
+    <PageHeader eyebrow="Unit economics" title="Production profitability" description="Costs, output and revenue side by side for every production cycle." action={<div className="inline-actions no-print"><DownloadLink dataset="report-cycle-profitability" label="Download CSV" /><PrintButton /></div>} />
     <section className="metrics">
       <MetricCard label="Revenue" value={money(totalRevenue)} hint="Linked to production cycles" icon={<TrendingUp size={16} />} />
       <MetricCard label="Production cost" value={money(totalCost)} hint="Expenses, inputs, labour, equipment" icon={<WalletCards size={16} />} />
       <MetricCard label="Gross margin" value={money(totalMargin)} hint={`${marginPct.toFixed(1)}% of revenue`} icon={<CircleDollarSign size={16} />} />
-      <MetricCard label="Costed cycles" value={String(rows.filter(r=>r.cost||r.revenue).length)} hint={`${cycles.length} total cycles`} icon={<Gauge size={16} />} />
+      <MetricCard label="Costed cycles" value={String(rows.filter(r => r.cost || r.revenue).length)} hint={`${rows.length} total cycles`} icon={<Gauge size={16} />} />
     </section>
     {rows.length ? <div className="table-wrap"><table><thead><tr><th>Cycle</th><th>Farm</th><th className="text-right">Direct expenses</th><th className="text-right">Inputs</th><th className="text-right">Labour</th><th className="text-right">Equipment</th><th className="text-right">Total cost</th><th className="text-right">Revenue</th><th className="text-right">Margin</th><th className="text-right">Budget / output</th></tr></thead><tbody>{rows.map(r => {
       const budgetPct = r.budget ? r.cost / r.budget * 100 : 0;
       const costPerOutput = r.output ? r.cost / r.output : 0;
-      return <tr key={r.c.id}>
-        <td><b>{r.c.name}</b><div className="sub">{r.c.commodity} · {humanize(r.c.type)}</div></td>
-        <td>{r.c.farm.name}<div className="sub">{r.c.unit?.name || "Farm-wide"}</div></td>
+      return <tr key={r.id}>
+        <td><b>{r.cycle}</b><div className="sub">{r.commodity} · {humanize(r.type)}</div></td>
+        <td>{r.farm}<div className="sub">{r.unit || "Farm-wide"}</div></td>
         <td className="text-right">{money(r.direct)}</td>
         <td className="text-right">{money(r.inputs)}</td>
         <td className="text-right">{money(r.labour)}</td>

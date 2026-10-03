@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { createExpenseAction, createRevenueAction } from "@/app/actions";
 import { updateExpenseStatusAction } from "@/app/commerce-actions";
 import { ActionForm } from "@/components/action-form";
+import { DownloadLink, isoDay } from "@/components/download-link";
 import { EmptyState } from "@/components/empty-state";
 import { FormDetails } from "@/components/form-details";
 import { MetricCard } from "@/components/metric-card";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { invoiceBalance, purchaseOrderTotals } from "@/lib/ledger";
 import { revenueTypes } from "@/lib/options";
+import { spendingByCategory } from "@/lib/reports";
 import { tenantContext } from "@/lib/tenant";
 import { formatMoney, humanize, safeDate } from "@/lib/utils";
 
@@ -42,7 +44,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const since = periodStart(period);
   const expenseWhere: Prisma.ExpenseWhereInput = { tenantId: ctx.tenantId, ...ctx.scope.byFarm, ...(since ? { incurredAt: { gte: since } } : {}) };
   const revenueWhere: Prisma.RevenueWhereInput = { tenantId: ctx.tenantId, ...ctx.scope.byFarm, ...(since ? { occurredAt: { gte: since } } : {}) };
-  const [farms, cycles, accounts, expenses, revenues, pending, openInvoices, openPOs] = await Promise.all([
+  const [farms, cycles, accounts, expenses, revenues, pending, openInvoices, openPOs, categories, incomeSum] = await Promise.all([
     db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
     db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
@@ -51,14 +53,15 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     db.expense.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, ...ctx.scope.byFarm }, include: { farm: true, cycle: true }, orderBy: { incurredAt: "asc" }, take: 100 }),
     db.invoice.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...ctx.scope.byFarm }, select: { total: true, amountPaid: true } }),
     db.purchaseOrder.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"] }, ...ctx.scope.byFarm }, include: { items: true, payments: true } }),
+    // Totals come from the whole period, not the 300 most recent rows listed below.
+    spendingByCategory(ctx.tenantId, ctx.farmScope, { from: since }),
+    db.revenue.aggregate({ where: revenueWhere, _sum: { amount: true } }),
   ]);
   const money = (n: number | string | { toString(): string }) => formatMoney(n, ctx.tenant.currency);
-  const spent = expenses.filter(e => ["APPROVED", "PAID"].includes(e.status)).reduce((s, e) => s + Number(e.amount), 0);
-  const income = revenues.reduce((s, r) => s + Number(r.amount), 0);
+  const spent = categories.reduce((s, c) => s + c.amount, 0);
+  const income = Number(incomeSum._sum.amount || 0);
   const receivable = openInvoices.reduce((s, i) => s + invoiceBalance(i), 0);
   const payable = openPOs.reduce((s, po) => s + purchaseOrderTotals(po).balance, 0) + pending.filter(e => e.status === "APPROVED").reduce((s, e) => s + Number(e.amount), 0);
-  const byCategory = new Map<string, number>();
-  expenses.filter(e => ["APPROVED", "PAID"].includes(e.status)).forEach(e => byCategory.set(e.category, (byCategory.get(e.category) || 0) + Number(e.amount)));
   const canManage = ctx.can("finance.manage");
   const periodLabel = periods.find(([k]) => k === period)![1].toLowerCase();
   const tabLink = (t: string) => `/finance?period=${period}&tab=${t}`;
@@ -120,7 +123,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       : tab === "income" ? (revenues.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th>Type</th><th>From</th><th className="text-right">Amount</th></tr></thead><tbody>{revenues.map(r => <tr key={r.id}><td>{safeDate(r.occurredAt)}</td><td><b>{r.invoiceId ? <Link className="link" href={`/sales/invoices/${r.invoiceId}`}>{r.description}</Link> : r.description}</b><div className="sub">{r.reference || ""}</div></td><td>{r.farm?.name || "Organization"}<div className="sub">{r.cycle?.name || ""}</div></td><td>{humanize(r.type)}</td><td>{r.customer || "—"}</td><td className="text-right">{money(r.amount)}</td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No income in this period" text="Sales invoices and other income will appear here." /></div>)
         : <div className="grid-main-side">
           {expenses.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th className="text-right">Amount</th><th>Status</th></tr></thead><tbody>{expenses.map(e => <tr key={e.id}><td>{safeDate(e.incurredAt)}</td><td><b>{e.description}</b><div className="sub">{e.category}{e.account ? ` · from ${e.account.name}` : ""}</div></td><td>{e.farm?.name || "Organization"}<div className="sub">{e.cycle?.name || ""}</div></td><td className="text-right">{money(e.amount)}</td><td><span className={`status ${expenseTone(e.status)}`}>{humanize(e.status)}</span></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No expenses in this period" text="Record farm spending so you can see your true costs." /></div>}
-          <div className="card"><div className="card-head"><div><h2>Spending by category</h2><div className="card-sub">Approved and paid, {periodLabel}</div></div></div>{[...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, value]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(value)}</b></div><div className="progress"><span style={{ width: `${spent ? Math.max(4, value / spent * 100) : 0}%` }} /></div></div>)}{!byCategory.size && <p className="muted">No approved spending in this period.</p>}</div>
+          <div className="card"><div className="card-head"><div><h2>Spending by category</h2><div className="card-sub">Approved and paid, {periodLabel}</div></div>{categories.length && ctx.can("analytics.view") ? <DownloadLink dataset="report-spending-by-category" from={since ? isoDay(since) : undefined} /> : null}</div>{categories.slice(0, 10).map(c => <div className="progress-row" key={c.category}><div className="progress-label"><span>{c.category}</span><b>{money(c.amount)}</b></div><div className="progress"><span style={{ width: `${spent ? Math.max(4, c.amount / spent * 100) : 0}%` }} /></div></div>)}{!categories.length && <p className="muted">No approved spending in this period.</p>}</div>
         </div>}
   </>;
 }

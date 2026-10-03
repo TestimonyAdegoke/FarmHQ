@@ -202,3 +202,4 @@ a.alert:hover b { text-decoration:underline; text-underline-offset:3px; }
 .farm-scope-list { display:grid; gap:6px; margin-bottom:6px; min-width:200px; }
 .farm-scope-list label { display:flex; gap:8px; align-items:center; font-weight:500; }
 .farm-scope-list input[type="checkbox"] { width:18px; height:18px; }
+.export-group { font-size:11.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); font-weight:600; margin:22px 0 10px; }

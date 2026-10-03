@@ -4,16 +4,21 @@ import { db } from "@/lib/db";
 import { farmWhere, relatedFarmWhere, type FarmScope } from "@/lib/farm-scope";
 import { invoiceBalance, invoiceDisplayStatus, labourCost, stockPositions } from "@/lib/ledger";
 import type { Permission } from "@/lib/permissions";
+import { cycleCostPosition, cycleProfitability, farmActivity, monthlyProfitAndLoss, salesByCustomer, salesByProduct, spendingByCategory } from "@/lib/reports";
 
 type Range = { from?: Date; to?: Date };
 type Row = Record<string, string | number | null | undefined>;
 
 const d = (value?: Date | null) => (value ? value.toISOString().slice(0, 10) : "");
 const n = (value: unknown) => (value == null ? "" : Number(value));
+const money = (value: number) => Math.round(value * 100) / 100;
+const pct = (ratio: number) => Math.round(ratio * 1000) / 10;
 const between = (range: Range) => (range.from || range.to ? { ...(range.from ? { gte: range.from } : {}), ...(range.to ? { lte: range.to } : {}) } : undefined);
 
 // Loaders receive the member's farm scope; `organisationWide` datasets are not available to farm-scoped members.
-export const datasets: Record<string, { label: string; description: string; permission: Permission; organisationWide?: boolean; load: (tenantId: string, range: Range, scope: FarmScope) => Promise<Row[]> }> = {
+export type Dataset = { label: string; description: string; permission: Permission; organisationWide?: boolean; /** Summaries that mirror a report page, rather than raw records. */ kind?: "report"; load: (tenantId: string, range: Range, scope: FarmScope) => Promise<Row[]> };
+
+export const datasets: Record<string, Dataset> = {
   invoices: {
     label: "Invoices", description: "Every invoice with totals, payments and balance", permission: "sales.view",
     load: async (tenantId, range, scope) => (await db.invoice.findMany({ where: { tenantId, issueDate: between(range), ...farmWhere(scope) }, include: { customer: true }, orderBy: { issueDate: "asc" } })).map(i => ({
@@ -83,6 +88,42 @@ export const datasets: Record<string, { label: string; description: string; perm
       const customers = await db.customer.findMany({ where: { tenantId }, include: { invoices: { where: { status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...farmWhere(scope) } } }, orderBy: { name: "asc" } });
       return customers.map(c => ({ customer: c.name, phone: c.phone, email: c.email, terms_days: c.paymentTermsDays, credit_limit: n(c.creditLimit), open_invoices: c.invoices.length, outstanding: c.invoices.reduce((s, i) => s + invoiceBalance(i), 0), overdue: c.invoices.filter(i => invoiceDisplayStatus(i) === "OVERDUE").reduce((s, i) => s + invoiceBalance(i), 0) }));
     },
+  },
+
+  // ----- Reports: the same figures as the report pages (src/lib/reports.ts). -----
+  "report-profit-loss": {
+    kind: "report", label: "Profit & loss by month", description: "Income, approved spending, result and cash collected per month", permission: "analytics.view",
+    load: async (tenantId, range, scope) => (await monthlyProfitAndLoss(tenantId, scope, range)).map(r => ({ month: r.month, income: money(r.income), spending: money(r.spending), profit_loss: money(r.profit), cash_collected: money(r.cashCollected) })),
+  },
+  "report-sales-by-product": {
+    kind: "report", label: "Sales by product", description: "What sold, how much and for how much, best sellers first", permission: "analytics.view",
+    load: async (tenantId, range, scope) => (await salesByProduct(tenantId, scope, range)).map(r => ({ product: r.product, quantity: r.quantity, unit: r.unit, sales_value: money(r.value), invoices: r.invoices, average_price: r.quantity ? money(r.value / r.quantity) : "" })),
+  },
+  "report-sales-by-customer": {
+    kind: "report", label: "Sales by customer", description: "Invoiced sales per customer, largest first", permission: "analytics.view",
+    load: async (tenantId, range, scope) => (await salesByCustomer(tenantId, scope, range)).map(r => ({ customer: r.customer, invoices: r.invoices, sales_value: money(r.value) })),
+  },
+  "report-spending-by-category": {
+    kind: "report", label: "Spending by category", description: "Approved and paid spending per category with its share", permission: "analytics.view",
+    load: async (tenantId, range, scope) => (await spendingByCategory(tenantId, scope, range)).map(r => ({ category: r.category, transactions: r.transactions, amount: money(r.amount), share_pct: pct(r.share) })),
+  },
+  "report-cycle-profitability": {
+    kind: "report", label: "Profitability by cycle", description: "Full cost, revenue and margin for every production cycle (ignores date range)", permission: "finance.view",
+    load: async (tenantId, _range, scope) => (await cycleProfitability(tenantId, scope)).map(r => ({
+      cycle: r.cycle, commodity: r.commodity, type: r.type, status: r.status, farm: r.farm, unit: r.unit ?? "",
+      direct_expenses: money(r.direct), inputs: money(r.inputs), labour: money(r.labour), equipment: money(r.equipment), total_cost: money(r.cost),
+      revenue: money(r.revenue), margin: money(r.margin), margin_pct: r.revenue ? pct(r.margin / r.revenue) : "",
+      budget: r.budget ? money(r.budget) : "", budget_used_pct: r.budget ? pct(r.cost / r.budget) : "",
+      output: r.output || "", output_unit: r.outputUnit ?? "", cost_per_output_unit: r.output ? money(r.cost / r.output) : "",
+    })),
+  },
+  "report-farm-activity": {
+    kind: "report", label: "Farm activity", description: "Production cycles and units per farm (ignores date range)", permission: "analytics.view",
+    load: async (tenantId, _range, scope) => (await farmActivity(tenantId, scope)).map(r => ({ farm: r.farm, production_cycles: r.cycles, production_units: r.units })),
+  },
+  "report-cycle-costs": {
+    kind: "report", label: "Cycle cost against budget", description: "Expenses recorded per cycle compared with its budget (ignores date range)", permission: "analytics.view",
+    load: async (tenantId, _range, scope) => (await cycleCostPosition(tenantId, scope)).map(r => ({ cycle: r.cycle, commodity: r.commodity, recorded_cost: money(r.recordedCost), budget: r.budget ? money(r.budget) : "", budget_used_pct: r.budget ? pct(r.recordedCost / r.budget) : "" })),
   },
 };
 

@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
+import { DownloadLink } from "@/components/download-link";
 import { PageHeader } from "@/components/page-header";
-import { db } from "@/lib/db";
+import { PrintButton } from "@/components/print-button";
 import { datasets } from "@/lib/exports";
+import { monthlyProfitAndLoss, salesByCustomer, salesByProduct, spendingByCategory } from "@/lib/reports";
 import { tenantContext } from "@/lib/tenant";
 import { formatMoney, formatNumber } from "@/lib/utils";
 
@@ -15,55 +17,49 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const params = await searchParams;
   const thisYear = new Date().getFullYear();
   const year = Number(params.year) || thisYear;
-  const start = new Date(year, 0, 1), end = new Date(year + 1, 0, 1);
-  const [revenues, expenses, lines, payments] = await Promise.all([
-    db.revenue.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, occurredAt: { gte: start, lt: end } }, select: { occurredAt: true, amount: true } }),
-    db.expense.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, status: { in: ["APPROVED", "PAID"] }, incurredAt: { gte: start, lt: end } }, select: { incurredAt: true, amount: true, category: true } }),
-    db.invoiceItem.findMany({ where: { tenantId: ctx.tenantId, invoice: { status: { not: "VOID" }, issueDate: { gte: start, lt: end }, ...ctx.scope.byFarm } }, select: { description: true, quantity: true, unit: true, lineTotal: true, product: { select: { name: true } }, invoice: { select: { customer: { select: { name: true } } } } } }),
-    db.paymentReceived.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("invoice"), receivedAt: { gte: start, lt: end } }, select: { receivedAt: true, amount: true } }),
+  const range = { from: new Date(year, 0, 1), to: new Date(year, 11, 31, 23, 59, 59, 999) };
+  const yearFrom = `${year}-01-01`, yearTo = `${year}-12-31`;
+  const [monthly, byProduct, byCustomer, byCategory] = await Promise.all([
+    monthlyProfitAndLoss(ctx.tenantId, ctx.farmScope, range),
+    salesByProduct(ctx.tenantId, ctx.farmScope, range),
+    salesByCustomer(ctx.tenantId, ctx.farmScope, range),
+    spendingByCategory(ctx.tenantId, ctx.farmScope, range),
   ]);
   const money = (n: number) => formatMoney(n, ctx.tenant.currency);
-  const monthly = months.map((m, i) => ({ m, income: 0, spend: 0, cash: 0, i }));
-  revenues.forEach(r => { monthly[r.occurredAt.getMonth()].income += Number(r.amount); });
-  expenses.forEach(e => { monthly[e.incurredAt.getMonth()].spend += Number(e.amount); });
-  payments.forEach(p => { monthly[p.receivedAt.getMonth()].cash += Number(p.amount); });
-  const totals = monthly.reduce((t, r) => ({ income: t.income + r.income, spend: t.spend + r.spend, cash: t.cash + r.cash }), { income: 0, spend: 0, cash: 0 });
-  const peak = Math.max(1, ...monthly.map(r => Math.max(r.income, r.spend)));
-  const byProduct = new Map<string, { qty: number; unit: string; value: number }>();
-  const byCustomer = new Map<string, number>();
-  lines.forEach(l => {
-    const key = l.product?.name || l.description;
-    const entry = byProduct.get(key) || { qty: 0, unit: l.unit, value: 0 };
-    entry.qty += Number(l.quantity); entry.value += Number(l.lineTotal);
-    byProduct.set(key, entry);
-    byCustomer.set(l.invoice.customer.name, (byCustomer.get(l.invoice.customer.name) || 0) + Number(l.lineTotal));
-  });
-  const byCategory = new Map<string, number>();
-  expenses.forEach(e => byCategory.set(e.category, (byCategory.get(e.category) || 0) + Number(e.amount)));
+  const totals = monthly.reduce((t, r) => ({ income: t.income + r.income, spend: t.spend + r.spending, cash: t.cash + r.cashCollected }), { income: 0, spend: 0, cash: 0 });
+  const peak = Math.max(1, ...monthly.map(r => Math.max(r.income, r.spending)));
+  const topProduct = Math.max(1, ...byProduct.map(p => p.value));
+  const topCustomer = Math.max(1, ...byCustomer.map(c => c.value));
+  const topCategory = Math.max(1, ...byCategory.map(c => c.amount));
+
   const allowed = Object.entries(datasets).filter(([, def]) => ctx.can(def.permission) && !(def.organisationWide && ctx.scope.limited));
+  const reports = allowed.filter(([, def]) => def.kind === "report");
+  const records = allowed.filter(([, def]) => def.kind !== "report");
   const qs = new URLSearchParams({ ...(params.from ? { from: params.from } : {}), ...(params.to ? { to: params.to } : {}) }).toString();
+  const tile = ([key, def]: (typeof allowed)[number]) => <a key={key} className="menu-tile" href={`/api/export/${key}${qs ? `?${qs}` : ""}`} download><span className="icon-box">{def.kind === "report" ? <FileSpreadsheet size={17} /> : <Download size={17} />}</span><b>{def.label}</b><small>{def.description}</small></a>;
 
   return <>
-    <PageHeader eyebrow="Money" title="Reports & export" description="Your year at a glance, plus spreadsheet downloads for your accountant, bank or cooperative." action={<nav className="segmented" aria-label="Year">{[thisYear - 2, thisYear - 1, thisYear].map(y => <Link key={y} href={`/reports?year=${y}`} className={y === year ? "active" : ""}>{y}</Link>)}</nav>} />
+    <PageHeader eyebrow="Money" title="Reports & export" description="Your year at a glance. Every report downloads as a spreadsheet for your accountant, bank or cooperative." action={<div className="inline-actions no-print"><nav className="segmented" aria-label="Year">{[thisYear - 2, thisYear - 1, thisYear].map(y => <Link key={y} href={`/reports?year=${y}`} className={y === year ? "active" : ""}>{y}</Link>)}</nav><PrintButton /></div>} />
 
     <div className="card">
-      <div className="card-head"><div><h2>Profit & loss by month, {year}</h2><div className="card-sub">Income {money(totals.income)} · Spending {money(totals.spend)} · Result <b style={{ color: totals.income - totals.spend < 0 ? "var(--danger)" : "var(--brand)" }}>{money(totals.income - totals.spend)}</b></div></div></div>
+      <div className="card-head"><div><h2>Profit & loss by month, {year}</h2><div className="card-sub">Income {money(totals.income)} · Spending {money(totals.spend)} · Result <b className={totals.income - totals.spend < 0 ? "num-neg" : "num-pos"}>{money(totals.income - totals.spend)}</b></div></div><DownloadLink dataset="report-profit-loss" from={yearFrom} to={yearTo} /></div>
       <div className="table-wrap"><table><thead><tr><th>Month</th><th style={{ width: "34%" }}></th><th className="text-right">Income</th><th className="text-right">Spending</th><th className="text-right">Profit / loss</th><th className="text-right">Cash collected</th></tr></thead><tbody>
-        {monthly.map(r => <tr key={r.m}><td><b>{r.m}</b></td><td><div style={{ display: "grid", gap: 3 }}><div className="progress"><span style={{ width: `${r.income / peak * 100}%` }} /></div><div className="progress"><span style={{ width: `${r.spend / peak * 100}%`, background: "var(--warning)" }} /></div></div></td><td className={`text-right ${r.income ? "" : "num-zero"}`}>{money(r.income)}</td><td className={`text-right ${r.spend ? "" : "num-zero"}`}>{money(r.spend)}</td><td className={`text-right ${r.income - r.spend < 0 ? "num-neg" : r.income - r.spend > 0 ? "num-pos" : "num-zero"}`}>{money(r.income - r.spend)}</td><td className={`text-right ${r.cash ? "" : "num-zero"}`}>{money(r.cash)}</td></tr>)}
+        {monthly.map((r, i) => <tr key={r.month}><td><b>{months[i] ?? r.month}</b></td><td><div style={{ display: "grid", gap: 3 }}><div className="progress"><span style={{ width: `${r.income / peak * 100}%` }} /></div><div className="progress"><span style={{ width: `${r.spending / peak * 100}%`, background: "var(--warning)" }} /></div></div></td><td className={`text-right ${r.income ? "" : "num-zero"}`}>{money(r.income)}</td><td className={`text-right ${r.spending ? "" : "num-zero"}`}>{money(r.spending)}</td><td className={`text-right ${r.profit < 0 ? "num-neg" : r.profit > 0 ? "num-pos" : "num-zero"}`}>{money(r.profit)}</td><td className={`text-right ${r.cashCollected ? "" : "num-zero"}`}>{money(r.cashCollected)}</td></tr>)}
       </tbody></table></div>
-      <div className="muted small-text" style={{ marginTop: 10 }}><span style={{ color: "var(--brand)" }}>■</span> Income &nbsp; <span style={{ color: "var(--warning)" }}>■</span> Spending</div>
+      <div className="legend" style={{ marginTop: 12 }}><span><i />Income</span><span><i className="warn" />Spending</span></div>
     </div>
 
     <div className="grid-3">
-      <div className="card"><div className="card-head"><h2>Best-selling products</h2></div>{[...byProduct.entries()].sort((a, b) => b[1].value - a[1].value).slice(0, 8).map(([name, v]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(v.value)}</b></div><div className="progress"><span style={{ width: `${v.value / Math.max(1, ...[...byProduct.values()].map(x => x.value)) * 100}%` }} /></div><small className="muted">{formatNumber(v.qty, 2)} {v.unit} sold</small></div>)}{!byProduct.size ? <p className="muted">No invoiced sales this year.</p> : null}</div>
-      <div className="card"><div className="card-head"><h2>Top customers</h2></div>{[...byCustomer.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(v)}</b></div><div className="progress"><span style={{ width: `${v / Math.max(...byCustomer.values()) * 100}%` }} /></div></div>)}{!byCustomer.size ? <p className="muted">No customers invoiced this year.</p> : null}</div>
-      <div className="card"><div className="card-head"><h2>Where money went</h2></div>{[...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(v)}</b></div><div className="progress"><span style={{ width: `${v / Math.max(...byCategory.values()) * 100}%`, background: "var(--warning)" }} /></div></div>)}{!byCategory.size ? <p className="muted">No approved spending this year.</p> : null}</div>
+      <div className="card"><div className="card-head"><h2>Best-selling products</h2><DownloadLink dataset="report-sales-by-product" from={yearFrom} to={yearTo} /></div>{byProduct.slice(0, 8).map(p => <div className="progress-row" key={`${p.product}-${p.unit}`}><div className="progress-label"><span>{p.product}</span><b>{money(p.value)}</b></div><div className="progress"><span style={{ width: `${p.value / topProduct * 100}%` }} /></div><small className="muted">{formatNumber(p.quantity, 2)} {p.unit} sold</small></div>)}{!byProduct.length ? <p className="muted">No invoiced sales this year.</p> : null}</div>
+      <div className="card"><div className="card-head"><h2>Top customers</h2><DownloadLink dataset="report-sales-by-customer" from={yearFrom} to={yearTo} /></div>{byCustomer.slice(0, 8).map(c => <div className="progress-row" key={c.customer}><div className="progress-label"><span>{c.customer}</span><b>{money(c.value)}</b></div><div className="progress"><span style={{ width: `${c.value / topCustomer * 100}%` }} /></div></div>)}{!byCustomer.length ? <p className="muted">No customers invoiced this year.</p> : null}</div>
+      <div className="card"><div className="card-head"><h2>Where money went</h2><DownloadLink dataset="report-spending-by-category" from={yearFrom} to={yearTo} /></div>{byCategory.slice(0, 8).map(c => <div className="progress-row" key={c.category}><div className="progress-label"><span>{c.category}</span><b>{money(c.amount)}</b></div><div className="progress"><span style={{ width: `${c.amount / topCategory * 100}%`, background: "var(--warning)" }} /></div></div>)}{!byCategory.length ? <p className="muted">No approved spending this year.</p> : null}</div>
     </div>
 
-    <div className="card">
-      <div className="card-head"><div><h2>Download data (CSV)</h2><div className="card-sub">Opens in Excel, Google Sheets or LibreOffice. Leave dates empty for all records.</div></div></div>
-      <form className="inline-actions" style={{ marginBottom: 16 }}><label className="inline-field">From<input type="date" name="from" defaultValue={params.from || ""} /></label><label className="inline-field">To<input type="date" name="to" defaultValue={params.to || ""} /></label><input type="hidden" name="year" value={year} /><button className="button secondary small" style={{ alignSelf: "flex-end" }}>Apply dates</button></form>
-      <div className="menu-grid">{allowed.map(([key, def]) => <a key={key} className="menu-tile" href={`/api/export/${key}${qs ? `?${qs}` : ""}`}><span className="icon-box"><Download size={17} /></span><b>{def.label}</b><small>{def.description}</small></a>)}</div>
+    <div className="card no-print">
+      <div className="card-head"><div><h2>Download reports &amp; data</h2><div className="card-sub">Spreadsheets (CSV) that open in Excel, Google Sheets or LibreOffice. Leave the dates empty for everything on record.</div></div></div>
+      <form className="inline-actions"><label className="inline-field">From<input type="date" name="from" defaultValue={params.from || ""} /></label><label className="inline-field">To<input type="date" name="to" defaultValue={params.to || ""} /></label><input type="hidden" name="year" value={year} /><button className="button secondary small" style={{ alignSelf: "flex-end" }}>Apply dates</button></form>
+      {reports.length ? <><h3 className="export-group">Reports</h3><div className="menu-grid">{reports.map(tile)}</div></> : null}
+      {records.length ? <><h3 className="export-group">Records</h3><div className="menu-grid">{records.map(tile)}</div></> : null}
     </div>
   </>;
 }
