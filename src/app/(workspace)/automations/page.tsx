@@ -2,6 +2,7 @@ import { BellRing, CheckCheck, Play, Plus, Workflow } from "lucide-react";
 import { createAutomationRuleAction, markNotificationReadAction, runAutomationRulesAction } from "@/app/v03-actions";
 import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
+import { NotificationDeliveryPanel } from "@/components/notification-delivery-panel";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { tenantContext } from "@/lib/tenant";
@@ -24,5 +25,6 @@ export default async function AutomationsPage() {
       <div className="card"><div className="card-head"><h2>Automation rules</h2></div>{rules.length?<div className="table-wrap"><table><thead><tr><th>Rule</th><th>Trigger</th><th>Severity</th><th>Status</th></tr></thead><tbody>{rules.map(r=><tr key={r.id}><td><b>{r.name}</b><div className="muted" style={{fontSize:12}}>{r.threshold!=null?"threshold "+String(r.threshold):"uses record threshold / condition"}</div></td><td>{r.trigger.replaceAll("_"," ")}</td><td><span className={"status "+(r.severity==="CRITICAL"?"warn":"neutral")}>{r.severity}</span></td><td>{r.active?"ACTIVE":"PAUSED"}</td></tr>)}</tbody></table></div>:<EmptyState title="No automation rules" text="Create a rule above to start surfacing operational exceptions."/>}</div>
       <div className="card"><div className="card-head"><h2>Notifications</h2></div>{notifications.length?<div style={{display:"flex",flexDirection:"column",gap:10}}>{notifications.map(n=><div className="alert" key={n.id} style={{opacity:n.readAt?.8:1}}><BellRing size={18} color={n.severity==="CRITICAL"?"#b33939":"var(--brand)"}/><div style={{flex:1}}><b>{n.title}</b><small>{n.body} · {safeDate(n.createdAt)}</small></div>{!n.readAt?<form action={markNotificationReadAction}><input type="hidden" name="id" value={n.id}/><button className="button secondary small">Read</button></form>:<CheckCheck size={17} color="var(--brand)"/>}</div>)}</div>:<EmptyState title="No notifications" text="Run active rules to evaluate current farm conditions."/>}</div>
     </div>
+    <NotificationDeliveryPanel tenantId={ctx.tenantId}/>
   </>;
 }
