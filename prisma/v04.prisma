@@ -1,0 +1,148 @@
+enum TraceLotStatus {
+  ACTIVE
+  QUARANTINED
+  RELEASED
+  CONSUMED
+  SOLD
+  CLOSED
+}
+
+enum TraceEventType {
+  CREATED
+  HARVESTED
+  RECEIVED
+  TRANSFERRED
+  PACKED
+  GRADED
+  INSPECTED
+  SOLD
+  DELIVERED
+  ADJUSTED
+  NOTE
+}
+
+enum IotDeviceKind {
+  WEATHER_STATION
+  SOIL_SENSOR
+  WATER_QUALITY
+  METER
+  GPS_TRACKER
+  LIVESTOCK_SENSOR
+  OTHER
+}
+
+enum OfflineMutationType {
+  SCOUTING_OBSERVATION
+  TASK_STATUS
+  CROP_ACTIVITY_STATUS
+}
+
+enum OfflineMutationStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model TraceLot {
+  id              String         @id @default(cuid())
+  tenantId        String
+  lotCode         String
+  publicToken     String         @unique
+  productId       String?
+  farmId          String?
+  cycleId         String?
+  harvestRecordId String?
+  parentLotId     String?
+  quantity        Decimal?       @db.Decimal(14, 3)
+  unit            String?
+  grade           String?
+  status          TraceLotStatus @default(ACTIVE)
+  harvestedAt     DateTime?
+  expiresAt       DateTime?
+  notes           String?
+  createdById     String
+  parent          TraceLot?      @relation("TraceLotParent", fields: [parentLotId], references: [id], onDelete: SetNull)
+  children        TraceLot[]     @relation("TraceLotParent")
+  events          TraceEvent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([tenantId, lotCode])
+  @@index([tenantId, status])
+  @@index([productId, farmId])
+  @@index([cycleId, harvestRecordId])
+}
+
+model TraceEvent {
+  id          String         @id @default(cuid())
+  tenantId    String
+  lotId       String
+  type        TraceEventType
+  warehouseId String?
+  quantity    Decimal?       @db.Decimal(14, 3)
+  unit        String?
+  reference   String?
+  location    String?
+  notes       String?
+  metadata    Json?
+  occurredAt  DateTime       @default(now())
+  createdById String
+  lot         TraceLot       @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+
+  @@index([tenantId, occurredAt])
+  @@index([lotId, occurredAt])
+}
+
+model IotDevice {
+  id          String        @id @default(cuid())
+  tenantId    String
+  farmId      String
+  unitId      String?
+  name        String
+  code        String
+  kind        IotDeviceKind @default(OTHER)
+  apiKeyHash  String
+  active      Boolean       @default(true)
+  lastSeenAt  DateTime?
+  metadata    Json?
+  readings    SensorReading[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, farmId, active])
+}
+
+model SensorReading {
+  id         String    @id @default(cuid())
+  tenantId   String
+  deviceId   String
+  metric     String
+  value      Decimal   @db.Decimal(18, 6)
+  unit       String
+  recordedAt DateTime  @default(now())
+  metadata   Json?
+  device     IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId, metric, recordedAt])
+  @@index([deviceId, recordedAt])
+}
+
+model OfflineMutation {
+  id               String                @id @default(cuid())
+  tenantId         String
+  userId           String
+  clientMutationId String
+  deviceFingerprint String?
+  type             OfflineMutationType
+  payload          Json
+  status           OfflineMutationStatus @default(PENDING)
+  error            String?
+  processedAt      DateTime?
+  createdAt        DateTime              @default(now())
+
+  @@unique([tenantId, clientMutationId])
+  @@index([tenantId, userId, status])
+}
