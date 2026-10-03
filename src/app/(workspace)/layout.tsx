@@ -7,6 +7,8 @@ import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { visibleNavGroups } from "@/lib/navigation";
 import { can } from "@/lib/permissions";
+import { humanize } from "@/lib/utils";
+import { Crumbs } from "@/components/crumbs";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireSession();
@@ -26,10 +28,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     />
     <main className="main">
       <header className="topbar">
-        <div className="topbar-title"><strong>{membership.tenant.name}</strong><span className="muted topbar-sub">Farm operations</span></div>
+        <Crumbs fallback={membership.tenant.name} />
         <div className="topbar-actions">
           {unread ? <Link href="/automations" className="status warn" title="Unread alerts">{unread} alert{unread === 1 ? "" : "s"}</Link> : null}
-          <span className="status topbar-role">{membership.role.replaceAll("_", " ")}</span>
+          <span className="topbar-role">{humanize(membership.role)}</span>
           <Link href="/profile" className="icon-button" aria-label="My profile"><UserRound size={18}/></Link>
         </div>
       </header>

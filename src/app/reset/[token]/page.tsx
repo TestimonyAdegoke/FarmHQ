@@ -17,13 +17,13 @@ export default async function ResetPage({ params }: { params: Promise<{ token: s
       <h1>Set a new password</h1><p>Hello {record.user.name.split(" ")[0]}, choose a new password for FarmHQ.</p>
       <ActionForm action={resetPasswordAction} reset={false}>
         <input type="hidden" name="token" value={token} />
-        <div className="field" style={{ marginTop: 18 }}><label>New password</label><input name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
-        <div className="field" style={{ marginTop: 14 }}><label>Repeat password</label><input name="confirm" type="password" required minLength={10} autoComplete="new-password" /></div>
-        <button className="button" style={{ width: "100%", marginTop: 20 }}>Save password</button>
+        <div className="field"><label htmlFor="password">New password</label><input id="password" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
+        <div className="field"><label htmlFor="confirm">Repeat password</label><input id="confirm" name="confirm" type="password" required minLength={10} autoComplete="new-password" /></div>
+        <button className="button">Save password</button>
       </ActionForm>
     </> : <>
       <h1>Link expired</h1><p>This password reset link has expired or was already used. Ask your farm administrator to send a new one.</p>
-      <Link className="button" href="/login" style={{ marginTop: 14 }}>Back to sign in</Link>
+      <p className="auth-foot"><Link href="/login">Back to sign in</Link></p>
     </>}
   </section></main>;
 }

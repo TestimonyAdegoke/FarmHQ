@@ -10,9 +10,9 @@ import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { labourCost } from "@/lib/ledger";
-import { label, payBases, paymentMethods } from "@/lib/options";
+import { payBases, paymentMethods } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, formatNumber, safeDate, toDateInput } from "@/lib/utils";
+import { formatMoney, formatNumber, humanize, safeDate, toDateInput } from "@/lib/utils";
 
 export const metadata = { title: "Workers & Attendance" };
 
@@ -49,15 +49,15 @@ export default async function WorkforcePage({ searchParams }: { searchParams: Pr
   return <>
     <PageHeader eyebrow="People" title="Workers & attendance" description="Daily attendance, labour costs per farm and cycle, wage advances and approvals. Pay workers from Payroll." action={<Link className="button secondary small" href="/payroll">Go to payroll</Link>} />
     <section className="metrics">
-      <MetricCard label="Active workers" value={String(workers.length)} hint={`${workers.filter(w => ["DAILY", "PIECE_RATE"].includes(w.payBasis)).length} casual / piece-rate`} icon={<Users size={18} />} />
-      <MetricCard label="At work today" value={String(presentToday.length)} hint="From attendance & timesheets" icon={<UserCheck size={18} />} />
-      <MetricCard label="Labour cost this month" value={money(monthCost)} hint="Approved work" icon={<Clock3 size={18} />} />
-      <MetricCard label="Unrecovered advances" value={money(advanceTotal)} hint={`${pending.length} timesheets to approve`} icon={<HandCoins size={18} />} />
+      <MetricCard label="Active workers" value={String(workers.length)} hint={`${workers.filter(w => ["DAILY", "PIECE_RATE"].includes(w.payBasis)).length} casual / piece-rate`} icon={<Users size={16} />} />
+      <MetricCard label="At work today" value={String(presentToday.length)} hint="From attendance & timesheets" icon={<UserCheck size={16} />} />
+      <MetricCard label="Labour cost this month" value={money(monthCost)} hint="Approved work" icon={<Clock3 size={16} />} />
+      <MetricCard label="Unrecovered advances" value={money(advanceTotal)} hint={`${pending.length} timesheets to approve`} icon={<HandCoins size={16} />} />
     </section>
 
     {canAttend && workers.length ? <AttendanceRegister workers={workers.map(w => ({ id: w.id, name: w.name, jobTitle: w.jobTitle, payBasis: w.payBasis, farmId: w.farmId, pieceUnit: w.pieceUnit }))} farms={farms.map(f => ({ id: f.id, name: f.name }))} cycles={cycles.map(c => ({ id: c.id, name: c.name, farmId: c.farmId }))} today={toDateInput(new Date())} /> : null}
 
-    {canManage ? <div className="grid-2">
+    {canManage ? <div className="drawers">
       <FormDetails title="Add worker" hint="Permanent staff, casual labourers, contractors and seasonal hands." open={!workers.length}>
         <ActionForm action={createWorkforceMemberAction} success="Worker added">
           <div className="form-grid two">
@@ -79,9 +79,8 @@ export default async function WorkforcePage({ searchParams }: { searchParams: Pr
           <div className="form-actions"><button className="button">Add worker</button></div>
         </ActionForm>
       </FormDetails>
-      <div>
-        <FormDetails title="Give a wage advance" hint="Recovered automatically from the worker's next pay run.">
-          <ActionForm action={createAdvanceAction}>
+      <FormDetails title="Give a wage advance" hint="Recovered automatically from the worker's next pay run.">
+          <ActionForm action={createAdvanceAction} success="Advance recorded">
             <div className="form-grid two">
               <div className="field span-2"><label>Worker</label><select name="workerId" required defaultValue=""><option value="" disabled>Select worker</option>{workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
               <div className="field"><label>Amount</label><input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required /></div>
@@ -108,17 +107,16 @@ export default async function WorkforcePage({ searchParams }: { searchParams: Pr
             <div className="form-actions"><button className="button">Save</button></div>
           </ActionForm>
         </FormDetails>
-      </div>
     </div> : null}
 
     <div className="tabs">{tabs.map(([k, l]) => <Link key={k} href={`/workforce?tab=${k}`} className={tab === k ? "active" : ""}>{l}</Link>)}</div>
 
-    {tab === "workers" ? (workers.length ? <div className="table-wrap"><table><thead><tr><th>Worker</th><th>Farm</th><th>Pay</th><th>Phone</th><th>Pay to</th></tr></thead><tbody>{workers.map(w => <tr key={w.id}><td><Link className="link" href={`/workforce/${w.id}`}>{w.name}</Link><div className="sub">{w.jobTitle || ""} {w.employeeNo ? `· ${w.employeeNo}` : ""}</div></td><td>{w.farm?.name || "Shared"}</td><td>{rateText(w, money)}<div className="sub">{label(w.employmentType)}</div></td><td>{w.phone || "—"}</td><td>{w.paymentMethod ? label(w.paymentMethod) : "—"}<div className="sub">{w.paymentAccount || ""}</div></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No workers yet" text="Add your farm staff and casual workers to start taking attendance." /></div>)
+    {tab === "workers" ? (workers.length ? <div className="table-wrap"><table><thead><tr><th>Worker</th><th>Farm</th><th>Pay</th><th>Phone</th><th>Pay to</th></tr></thead><tbody>{workers.map(w => <tr key={w.id}><td><Link className="link" href={`/workforce/${w.id}`}>{w.name}</Link><div className="sub">{[w.jobTitle, w.employeeNo].filter(Boolean).join(" · ")}</div></td><td>{w.farm?.name || "Shared"}</td><td>{rateText(w, money)}<div className="sub">{humanize(w.employmentType)}</div></td><td>{w.phone || "—"}</td><td>{w.paymentMethod ? humanize(w.paymentMethod) : "—"}<div className="sub">{w.paymentAccount || ""}</div></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No workers yet" text="Add your farm staff and casual workers to start taking attendance." /></div>)
       : tab === "advances" ? (advances.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Worker</th><th>Reason</th><th className="text-right">Amount</th></tr></thead><tbody>{advances.map(a => <tr key={a.id}><td>{safeDate(a.issuedAt)}</td><td>{a.worker.name}</td><td>{a.reason || "—"}</td><td className="text-right">{money(a.amount)}</td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No outstanding advances" text="Advances given to workers appear here until they are recovered in payroll." /></div>)
-        : tab === "recent" ? (recent.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Worker</th><th>Work</th><th>Farm / cycle</th><th>Hours</th><th className="text-right">Cost</th><th>Status</th></tr></thead><tbody>{recent.map(t => <tr key={t.id}><td>{safeDate(t.workDate)}</td><td>{t.worker.name}</td><td>{t.activity}{t.pieceQuantity ? <div className="sub">{formatNumber(t.pieceQuantity, 2)} {t.worker.pieceUnit || "pieces"}</div> : null}</td><td>{t.farm?.name || "Shared"}<div className="sub">{t.cycle?.name || ""}</div></td><td>{formatNumber(t.hours, 2)}</td><td className="text-right">{money(labourCost(t))}</td><td><span className={`status ${t.status === "SUBMITTED" ? "warn" : t.status === "REJECTED" ? "neutral" : ""}`}>{t.payRun ? `paid · ${t.payRun.runNo}` : t.status.toLowerCase()}</span></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No work recorded" text="Take attendance above to start building labour records." /></div>)
+        : tab === "recent" ? (recent.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Worker</th><th>Work</th><th>Farm / cycle</th><th className="text-right">Hours</th><th className="text-right">Cost</th><th>Status</th></tr></thead><tbody>{recent.map(t => <tr key={t.id}><td>{safeDate(t.workDate)}</td><td>{t.worker.name}</td><td>{t.activity}{t.pieceQuantity ? <div className="sub">{formatNumber(t.pieceQuantity, 2)} {t.worker.pieceUnit || "pieces"}</div> : null}</td><td>{t.farm?.name || "Shared"}<div className="sub">{t.cycle?.name || ""}</div></td><td className="text-right">{formatNumber(t.hours, 2)}</td><td className="text-right">{money(labourCost(t))}</td><td><span className={`status ${t.payRun ? "" : t.status === "SUBMITTED" ? "warn" : t.status === "REJECTED" ? "danger" : "info"}`}>{t.payRun ? `Paid · ${t.payRun.runNo}` : humanize(t.status)}</span></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No work recorded" text="Take attendance above to start building labour records." /></div>)
           : pending.length ? <div className="card">
-            <div className="card-head"><h2>Awaiting approval</h2>{canManage ? <div className="inline-actions"><ActionForm action={bulkApproveTimesheetsAction} confirm={`Approve all ${pending.length} submitted timesheets?`}><input type="hidden" name="status" value="APPROVED" /><button className="button small">Approve all</button></ActionForm></div> : null}</div>
-            <div className="table-wrap"><table><thead><tr><th>Date</th><th>Worker</th><th>Work</th><th>Farm / cycle</th><th>Hours</th><th className="text-right">Cost</th><th></th></tr></thead><tbody>{pending.map(t => <tr key={t.id}><td>{safeDate(t.workDate)}</td><td>{t.worker.name}</td><td>{t.activity}</td><td>{t.farm?.name || "Shared"}<div className="sub">{t.cycle?.name || ""}</div></td><td>{formatNumber(t.hours, 2)}</td><td className="text-right">{money(labourCost(t))}</td><td>{canManage ? <div className="inline-actions">
+            <div className="card-head"><div><h2>Awaiting approval</h2><div className="card-sub">Attendance taken by supervisors</div></div>{canManage ? <div className="inline-actions"><ActionForm action={bulkApproveTimesheetsAction} confirm={`Approve all ${pending.length} submitted timesheets?`}><input type="hidden" name="status" value="APPROVED" /><button className="button small">Approve all</button></ActionForm></div> : null}</div>
+            <div className="table-wrap"><table><thead><tr><th>Date</th><th>Worker</th><th>Work</th><th>Farm / cycle</th><th className="text-right">Hours</th><th className="text-right">Cost</th><th></th></tr></thead><tbody>{pending.map(t => <tr key={t.id}><td>{safeDate(t.workDate)}</td><td>{t.worker.name}</td><td>{t.activity}</td><td>{t.farm?.name || "Shared"}<div className="sub">{t.cycle?.name || ""}</div></td><td className="text-right">{formatNumber(t.hours, 2)}</td><td className="text-right">{money(labourCost(t))}</td><td>{canManage ? <div className="inline-actions">
               <ActionForm action={updateTimesheetStatusAction}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="status" value="APPROVED" /><button className="button secondary small">Approve</button></ActionForm>
               <ActionForm action={updateTimesheetStatusAction}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="status" value="REJECTED" /><button className="button secondary small">Reject</button></ActionForm>
             </div> : null}</td></tr>)}</tbody></table></div>

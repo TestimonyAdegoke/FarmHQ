@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { SearchX } from "lucide-react";
 
 export default function NotFound() {
-  return <div className="card" style={{ maxWidth: 520, margin: "40px auto", textAlign: "center", padding: 32 }}>
+  return <div className="card state-card">
+    <span className="icon-box" aria-hidden><SearchX size={20} /></span>
     <h2>Record not found</h2>
-    <p className="muted">It may have been removed, or it belongs to another workspace.</p>
-    <Link className="button" href="/dashboard" style={{ marginTop: 10 }}>Go to overview</Link>
+    <p>It may have been removed, or it belongs to another workspace.</p>
+    <div className="inline-actions"><Link className="button" href="/dashboard">Go to overview</Link></div>
   </div>;
 }

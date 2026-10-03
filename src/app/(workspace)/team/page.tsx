@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { appOrigin } from "@/lib/origin";
 import { tenantContext } from "@/lib/tenant";
-import { safeDate, whatsappLink } from "@/lib/utils";
+import { humanize, safeDate, whatsappLink } from "@/lib/utils";
 
 export const metadata = { title: "Team & Access" };
 
@@ -44,13 +44,13 @@ export default async function TeamPage() {
   return <>
     <PageHeader eyebrow="People" title="Team & access" description="Who can sign in to FarmHQ and what each person can see and do. Workers who don't use the app are managed under Workers & Attendance." />
     <section className="metrics">
-      <MetricCard label="Members" value={String(members.length)} hint="People with app access" icon={<Users size={18} />} />
-      <MetricCard label="Administrators" value={String(members.filter(m => ["OWNER", "ORG_ADMIN"].includes(m.role)).length)} hint="Owners + admins" icon={<Shield size={18} />} />
-      <MetricCard label="Pending invites" value={String(pending.length)} hint="Valid for 7 days" icon={<Plus size={18} />} />
-      <MetricCard label="Roles in use" value={String(new Set(members.map(m => m.role)).size)} hint="Of 14 available" icon={<KeyRound size={18} />} />
+      <MetricCard label="Members" value={String(members.length)} hint="People with app access" icon={<Users size={16} />} />
+      <MetricCard label="Administrators" value={String(members.filter(m => ["OWNER", "ORG_ADMIN"].includes(m.role)).length)} hint="Owners + admins" icon={<Shield size={16} />} />
+      <MetricCard label="Pending invites" value={String(pending.length)} hint="Valid for 7 days" icon={<Plus size={16} />} />
+      <MetricCard label="Roles in use" value={String(new Set(members.map(m => m.role)).size)} hint="Of 14 available" icon={<KeyRound size={16} />} />
     </section>
 
-    <FormDetails title="Invite someone" hint="Creates a link you can send by WhatsApp, SMS or email. They set their own password." open={members.length < 2}>
+    <FormDetails title="Invite someone" hint="Creates a link to share by WhatsApp, SMS or email. They set their own password." open={members.length < 2}>
       <ActionForm action={createInvitationAction} success="Invitation created. Share the link from the list below.">
         <div className="form-grid two">
           <div className="field"><label>Email</label><input name="email" type="email" required /></div>
@@ -60,12 +60,12 @@ export default async function TeamPage() {
       </ActionForm>
     </FormDetails>
 
-    <div className="card" style={{ marginBottom: 20 }}><div className="card-head"><h2>Members</h2></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Joined</th><th>Manage</th></tr></thead><tbody>{members.map(m => {
+    <div className="card"><div className="card-head"><div><h2>Members</h2><div className="card-sub">People who can sign in, and what they can do</div></div></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Joined</th><th>Manage</th></tr></thead><tbody>{members.map(m => {
       const self = m.userId === ctx.userId;
       const locked = m.role === "OWNER" && !isOwner;
       return <tr key={m.id}>
-        <td><b>{m.user.name}</b>{self ? <span className="status neutral" style={{ marginLeft: 6 }}>you</span> : null}<div className="sub">{m.user.email}{m.user.phone ? ` · ${m.user.phone}` : ""}</div></td>
-        <td>{locked || self ? <span className="status">{m.role.replaceAll("_", " ").toLowerCase()}</span> : <ActionForm action={changeMemberRoleAction} reset={false}><input type="hidden" name="id" value={m.id} /><div className="inline-actions"><select name="role" defaultValue={m.role} aria-label={`Role for ${m.user.name}`}>{assignable.map(([r]) => <option key={r} value={r}>{r.replaceAll("_", " ").toLowerCase()}</option>)}</select><button className="button secondary small">Save</button></div></ActionForm>}</td>
+        <td><b>{m.user.name}</b>{self ? <span className="status neutral" style={{ marginLeft: 6 }}>You</span> : null}<div className="sub">{m.user.email}{m.user.phone ? ` · ${m.user.phone}` : ""}</div></td>
+        <td>{locked || self ? <span className="status neutral">{humanize(m.role)}</span> : <ActionForm action={changeMemberRoleAction} reset={false}><input type="hidden" name="id" value={m.id} /><div className="inline-actions"><select name="role" defaultValue={m.role} aria-label={`Role for ${m.user.name}`}>{assignable.map(([r]) => <option key={r} value={r}>{humanize(r)}</option>)}</select><button className="button secondary small">Save</button></div></ActionForm>}</td>
         <td>{safeDate(m.createdAt)}</td>
         <td>{!locked && !self ? <div className="inline-actions">
           <ActionForm action={createPasswordResetLinkAction}><input type="hidden" name="id" value={m.id} /><button className="button secondary small">Reset password link</button></ActionForm>
@@ -78,8 +78,8 @@ export default async function TeamPage() {
       const live = i.status === "PENDING" && i.expiresAt > new Date();
       const link = `${origin}/invite/${i.token}`;
       return <tr key={i.id}>
-        <td>{i.email}</td><td>{i.role.replaceAll("_", " ").toLowerCase()}</td><td>{safeDate(i.expiresAt)}</td>
-        <td><span className={`status ${live ? "info" : i.status === "ACCEPTED" ? "" : "neutral"}`}>{live ? "pending" : i.status === "PENDING" ? "expired" : i.status.toLowerCase()}</span></td>
+        <td>{i.email}</td><td>{humanize(i.role)}</td><td className="nowrap">{safeDate(i.expiresAt)}</td>
+        <td><span className={`status ${live ? "info" : i.status === "ACCEPTED" ? "" : "neutral"}`}>{live ? "Pending" : i.status === "PENDING" ? "Expired" : humanize(i.status)}</span></td>
         <td>{live ? <div className="inline-actions"><input readOnly value={link} aria-label="Invitation link" style={{ width: 230, fontSize: 12 }} /><a className="button secondary small" href={whatsappLink(null, `You've been invited to join ${ctx.tenant.name} on FarmHQ. Open this link to set up your account: ${link}`)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> WhatsApp</a><ActionForm action={revokeInvitationAction}><input type="hidden" name="id" value={i.id} /><button className="button secondary small">Revoke</button></ActionForm></div> : "—"}</td>
       </tr>;
     })}</tbody></table></div></div> : <div className="card"><EmptyState title="No invitations" text="Invite managers, supervisors and your accountant to work in FarmHQ with you." /></div>}

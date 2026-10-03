@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Wallet } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { QuickSaleForm } from "@/components/quick-sale-form";
 import { db } from "@/lib/db";
@@ -26,7 +27,7 @@ export default async function QuickSalePage() {
   }
   return <>
     <PageHeader eyebrow="Sell & get paid" title="Quick sale" description="Record a farm-gate or market sale in one step: stock goes out, an invoice is issued and the payment is receipted." action={<Link href="/sales/invoices" className="button secondary small">View invoices</Link>} />
-    {!accounts.length ? <div className="alert" style={{ marginBottom: 16 }}><div><b>Tip: add your cash box, bank and mobile-money wallets</b><small>Set them up under <Link className="link" href="/accounts">Cash &amp; Bank</Link> so every payment lands in the right place and balances stay accurate.</small></div></div> : null}
+    {!accounts.length ? <div className="card"><div className="alert-list"><Link className="alert" href="/accounts"><Wallet size={16} /><div><b>Add your cash box, bank and mobile-money wallets</b><small>Set them up under Cash &amp; Bank so every payment lands in the right place and balances stay accurate.</small></div></Link></div></div> : null}
     <QuickSaleForm
       customers={customers}
       products={products.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.sellingPrice != null ? Number(p.sellingPrice) : null }))}

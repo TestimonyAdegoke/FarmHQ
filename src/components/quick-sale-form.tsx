@@ -29,7 +29,7 @@ export function QuickSaleForm({ customers, products, warehouses, accounts, farms
   const suggestedAccount = accounts.find(a => (method === "CASH" && a.type === "CASH") || (method === "MOBILE_MONEY" && a.type === "MOBILE_MONEY") || (["BANK_TRANSFER", "POS_CARD", "CHEQUE"].includes(method) && a.type === "BANK"));
 
   return <ActionForm action={quickSaleAction} className="form-card" reset={false}>
-    <div className="card-head"><div><h3>1. Who is buying?</h3><div className="muted small-text" style={{ marginTop: 4 }}>Leave blank for a walk-in cash customer.</div></div><Zap size={19} /></div>
+    <div className="card-head"><div><h2>1. Who is buying?</h2><div className="card-sub">Leave blank for a walk-in cash customer.</div></div></div>
     <div className="form-grid">
       <div className="field span-2"><label>Customer</label><select name="customerId" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">New or walk-in customer</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` · ${c.phone}` : ""}</option>)}</select></div>
       {!customerId ? <>
@@ -38,7 +38,7 @@ export function QuickSaleForm({ customers, products, warehouses, accounts, farms
       </> : null}
     </div>
 
-    <div className="card-head" style={{ marginTop: 22 }}><h3>2. What are they buying?</h3></div>
+    <div className="card-head" style={{ marginTop: 22 }}><h2>2. What are they buying?</h2></div>
     <div className="form-grid">
       <div className="field"><label>Sell from store</label><select name="warehouseId" value={warehouseId} onChange={e => setWarehouseId(e.target.value)}><option value="">Don&apos;t reduce stock</option>{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
       <div className="field"><label>Farm</label><select name="farmId" value={farmId} onChange={e => setFarmId(e.target.value)}><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
@@ -47,7 +47,7 @@ export function QuickSaleForm({ customers, products, warehouses, accounts, farms
     </div>
     <LineItemsEditor products={lineProducts} currency={currency} adjustments />
 
-    <div className="card-head" style={{ marginTop: 22 }}><h3>3. Payment</h3></div>
+    <div className="card-head" style={{ marginTop: 22 }}><h2>3. Payment</h2></div>
     <div className="form-grid">
       <div className="field"><label>Sale date</label><input name="saleDate" type="date" defaultValue={today} /></div>
       <div className="field"><label>Paid how?</label><select name="method" value={method} onChange={e => setMethod(e.target.value)}>{paymentMethods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>

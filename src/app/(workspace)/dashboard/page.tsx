@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { accountBalances, invoiceBalance, isOverdue, purchaseOrderTotals, stockPositions } from "@/lib/ledger";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, formatNumber, safeDate } from "@/lib/utils";
+import { formatMoney, formatNumber, humanize, safeDate } from "@/lib/utils";
+import { EmptyState } from "@/components/empty-state";
 
 export const metadata = { title: "Overview" };
 
@@ -69,37 +70,38 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   return <>
     <PageHeader eyebrow={new Intl.DateTimeFormat("en-NG", { weekday: "long", day: "numeric", month: "long" }).format(new Date())} title={`${greeting()}, ${ctx.user.name.split(" ")[0]}`} description="Here is what needs your attention across the farm today." />
     {denied ? <div className="error-banner" role="alert">Your role doesn&apos;t include access to that page. Ask an administrator if you need it.</div> : null}
-    {actions.length ? <div className="quick-actions">{actions.map(a => <Link key={a.href} href={a.href} className={`quick-action ${a.primary ? "primary" : ""}`}><span className="icon-box"><a.icon size={18} /></span>{a.label}</Link>)}</div> : null}
+    {actions.length ? <nav className="quick-actions" aria-label="Quick actions">{actions.map(a => <Link key={a.href} href={a.href} className={`quick-action ${a.primary ? "primary" : ""}`}><span className="icon-box"><a.icon size={17} /></span>{a.label}</Link>)}</nav> : null}
 
     <section className="metrics">
       {showMoney ? <>
-        <MetricCard label="Money available" value={money(cash)} hint={balances.size ? "Cash, bank & mobile money" : "Add accounts under Cash & Bank"} icon={<Wallet size={18} />} />
-        <MetricCard label="Owed to you" value={money(receivable)} hint={overdueCount ? `${overdueCount} overdue invoices` : "Unpaid invoices"} icon={<HandCoins size={18} />} />
-        <MetricCard label="This month's result" value={money(income - spend)} hint={`${money(income)} in · ${money(spend)} out`} icon={<CircleDollarSign size={18} />} />
-        <MetricCard label="You owe suppliers" value={money(payable)} hint={`${activeCycles} active cycles · ${farms} farms`} icon={<Receipt size={18} />} />
+        <MetricCard label="Money available" value={money(cash)} hint={balances.size ? "Cash, bank & mobile money" : "Add accounts under Cash & Bank"} icon={<Wallet size={16} />} />
+        <MetricCard label="Owed to you" value={money(receivable)} hint={overdueCount ? `${overdueCount} overdue invoice${overdueCount === 1 ? "" : "s"}` : "Unpaid invoices"} icon={<HandCoins size={16} />} />
+        <MetricCard label="This month's result" value={money(income - spend)} hint={`${money(income)} in · ${money(spend)} out`} icon={<CircleDollarSign size={16} />} />
+        <MetricCard label="You owe suppliers" value={money(payable)} hint={`${activeCycles} active cycle${activeCycles === 1 ? "" : "s"} · ${farms} farm${farms === 1 ? "" : "s"}`} icon={<Receipt size={16} />} />
       </> : <>
-        <MetricCard label="Active farms" value={String(farms)} hint="In this organization" icon={<Sprout size={18} />} />
-        <MetricCard label="Active cycles" value={String(activeCycles)} hint="Currently in production" icon={<CheckCircle2 size={18} />} />
-        <MetricCard label="Open tasks" value={String(openTasks.length)} hint={`${myTasks} assigned to you`} icon={<ClipboardCheck size={18} />} />
-        <MetricCard label="Field alerts" value={String(criticalObservations.length)} hint="High / critical issues" icon={<AlertTriangle size={18} />} />
+        <MetricCard label="Active farms" value={String(farms)} hint="In this organization" icon={<Sprout size={16} />} />
+        <MetricCard label="Active cycles" value={String(activeCycles)} hint="Currently in production" icon={<CheckCircle2 size={16} />} />
+        <MetricCard label="Open tasks" value={String(openTasks.length)} hint={`${myTasks} assigned to you`} icon={<ClipboardCheck size={16} />} />
+        <MetricCard label="Field alerts" value={String(criticalObservations.length)} hint="High / critical issues" icon={<AlertTriangle size={16} />} />
       </>}
     </section>
 
     <section className="grid-2">
-      <div className="card"><div className="card-head"><div><h2>Needs attention</h2><div className="muted small-text" style={{ marginTop: 4 }}>Things to act on today</div></div><AlertTriangle size={19} color="#9b6a10" /></div>
-        <div className="alert-list">{alerts.slice(0, 8).map(a => <Link className="alert" key={a.key} href={a.href}><AlertTriangle size={18} color="#9b6a10" /><div><b>{a.title}</b><small>{a.text}</small></div></Link>)}
-          {!alerts.length && <div className="alert"><CheckCircle2 size={18} color="var(--brand)" /><div><b>All clear</b><small>Low stock, field problems, overdue invoices and approvals will show up here.</small></div></div>}</div>
+      <div className="card"><div className="card-head"><div><h2>Needs attention</h2><div className="card-sub">Things to act on today</div></div>{alerts.length ? <span className="status warn">{alerts.length}</span> : null}</div>
+        <div className="alert-list">{alerts.slice(0, 8).map(a => <Link className="alert" key={a.key} href={a.href}><AlertTriangle size={16} /><div><b>{a.title}</b><small>{a.text}</small></div></Link>)}
+          {!alerts.length && <div className="alert ok"><CheckCircle2 size={16} /><div><b>All clear</b><small>Low stock, field problems, overdue invoices and approvals will show up here.</small></div></div>}</div>
       </div>
-      <div className="card"><div className="card-head"><div><h2>Production</h2><div className="muted small-text" style={{ marginTop: 4 }}>Active and planned cycles</div></div><Link className="link small-text" href="/production">All cycles</Link></div>
+      <div className="card"><div className="card-head"><div><h2>Production</h2><div className="card-sub">Active and planned cycles</div></div><Link className="link small-text" href="/production">All cycles</Link></div>
         {recentCycles.length ? recentCycles.map(c => {
           const total = c.startDate && c.expectedEndDate ? c.expectedEndDate.getTime() - c.startDate.getTime() : 0;
           const pct = c.status === "PLANNED" || !total ? 5 : Math.min(100, Math.max(3, (nowMs - c.startDate!.getTime()) / total * 100));
-          return <div className="progress-row" key={c.id}><div className="progress-label"><span><b>{c.commodity}</b> · {c.farm.name}</span><span className={`status ${c.status === "PLANNED" ? "neutral" : ""}`}>{c.status.toLowerCase()}</span></div><div className="progress"><span style={{ width: `${pct}%` }} /></div><small className="muted">{c.name}{c.expectedEndDate ? ` · ends ${safeDate(c.expectedEndDate)}` : ""}</small></div>;
-        }) : <div className="empty"><strong>No production cycles yet</strong><span>Start a crop season, flock or pond cycle from Production.</span></div>}
+          return <div className="progress-row" key={c.id}><div className="progress-label"><span><b>{c.commodity}</b> <span className="muted">· {c.farm.name}</span></span><span className={`status ${c.status === "PLANNED" ? "neutral" : ""}`}>{humanize(c.status)}</span></div><div className="progress"><span style={{ width: `${pct}%` }} /></div><small className="muted">{c.name}{c.expectedEndDate ? ` · ends ${safeDate(c.expectedEndDate)}` : ""}</small></div>;
+        }) : <EmptyState title="No production cycles yet" text="Start a crop season, flock or pond cycle from Production." />}
       </div>
-      <div className="card" style={{ gridColumn: "1/-1" }}><div className="card-head"><div><h2>Work queue</h2><div className="muted small-text" style={{ marginTop: 4 }}>Priority tasks across your operation</div></div><Link className="link small-text" href="/tasks">All tasks</Link></div>
-        {openTasks.length ? <div className="table-wrap"><table><thead><tr><th>Task</th><th>Farm</th><th>Assignee</th><th>Due</th><th>Status</th></tr></thead><tbody>{openTasks.map(x => <tr key={x.id}><td><b>{x.title}</b></td><td>{x.farm?.name || "All farms"}</td><td>{x.assignedTo?.name || "Unassigned"}</td><td>{x.dueAt && x.dueAt < new Date() ? <span className="status danger">{safeDate(x.dueAt)}</span> : safeDate(x.dueAt)}</td><td><span className={`status ${x.status === "BLOCKED" ? "warn" : x.status === "TODO" ? "neutral" : ""}`}>{x.status.replaceAll("_", " ").toLowerCase()}</span></td></tr>)}</tbody></table></div> : <div className="empty"><strong>No open tasks</strong><span>Work assigned across farms will appear here.</span></div>}
-      </div>
+    </section>
+
+    <section className="card"><div className="card-head"><div><h2>Work queue</h2><div className="card-sub">Priority tasks across your operation</div></div><Link className="link small-text" href="/tasks">All tasks</Link></div>
+      {openTasks.length ? <div className="table-wrap"><table><thead><tr><th>Task</th><th>Farm</th><th>Assignee</th><th>Due</th><th>Status</th></tr></thead><tbody>{openTasks.map(x => <tr key={x.id}><td><b>{x.title}</b></td><td>{x.farm?.name || "All farms"}</td><td>{x.assignedTo?.name || <span className="muted">Unassigned</span>}</td><td>{x.dueAt && x.dueAt < new Date() ? <span className="status danger">{safeDate(x.dueAt)}</span> : safeDate(x.dueAt)}</td><td><span className={`status ${x.status === "BLOCKED" ? "warn" : x.status === "TODO" ? "neutral" : "info"}`}>{humanize(x.status)}</span></td></tr>)}</tbody></table></div> : <EmptyState title="No open tasks" text="Work assigned across farms will appear here." />}
     </section>
   </>;
 }

@@ -44,3 +44,10 @@ export function toDateInput(value?: Date | null) {
   const d = new Date(value);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/** Turns enum-style values into sentence case for display: "PARTIALLY_PAID" → "Partially paid". */
+export function humanize(value?: string | null) {
+  if (!value) return "";
+  const text = value.replaceAll("_", " ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

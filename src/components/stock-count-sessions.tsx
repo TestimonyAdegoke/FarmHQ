@@ -1,8 +1,11 @@
-import { CheckCircle2, ClipboardList, Plus, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { addStockCountLineAction, cancelStockCountSessionAction, closeStockCountSessionAction, createStockCountSessionAction } from "@/app/v04-ops-actions";
 import { db } from "@/lib/db";
-import { formatNumber, safeDate } from "@/lib/utils";
+import { formatNumber, humanize, safeDate } from "@/lib/utils";
 import { ActionForm } from "@/components/action-form";
+import { FormDetails } from "@/components/form-details";
+
+const sessionTone = (status: string) => status==="OPEN"?"info":status==="CANCELLED"?"neutral":"";
 
 export async function StockCountSessions({ tenantId, warehouses, products }:{
   tenantId:string;
@@ -19,34 +22,42 @@ export async function StockCountSessions({ tenantId, warehouses, products }:{
   const warehouseNames = new Map(warehouses.map(item=>[item.id,item.name]));
   const productNames = new Map(products.map(item=>[item.id,item]));
 
-  return <div style={{display:"grid",gap:20,marginBottom:20}}>
-    <div className="grid-2">
-      <ActionForm className="form-card" action={createStockCountSessionAction} style={{margin:0}}>
-        <div className="card-head"><div><h3>Start count session</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Build a count sheet first; adjustments post only when the session is closed.</div></div><ClipboardList size={19}/></div>
-        <div className="field"><label>Warehouse</label><select name="warehouseId" required defaultValue=""><option value="" disabled>Select warehouse</option>{warehouses.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-        <div className="field" style={{marginTop:14}}><label>Notes</label><input name="notes"/></div>
-        <div className="form-actions"><button className="button" disabled={!warehouses.length}><Plus size={16}/> Start count</button></div>
-      </ActionForm>
+  return <div className="stack">
+    <ActionForm className="form-card" action={addStockCountLineAction} success="Count line saved">
+      <div className="card-head"><div><h2>Enter count</h2><div className="card-sub">The system quantity is taken when each line is saved.</div></div></div>
+      <div className="form-grid two">
+        <div className="field span-2"><label>Open count</label><select name="sessionId" required defaultValue=""><option value="" disabled>Select count</option>{open.map(session=><option key={session.id} value={session.id}>{session.sessionNo} · {warehouseNames.get(session.warehouseId)||"Warehouse"}</option>)}</select></div>
+        <div className="field"><label>Product</label><select name="productId" required defaultValue=""><option value="" disabled>Select product</option>{products.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <div className="field"><label>Lot number</label><input name="lotNumber"/></div>
+        <div className="field"><label>Counted quantity</label><input name="countedQuantity" required type="number" min="0" step="0.001"/></div>
+        <div className="field"><label>Notes</label><input name="notes"/></div>
+      </div>
+      <div className="form-actions"><button className="button" disabled={!open.length||!products.length}>Save count line</button></div>
+    </ActionForm>
 
-      <ActionForm className="form-card" action={addStockCountLineAction} style={{margin:0}}>
-        <div className="card-head"><div><h3>Add / update count line</h3><div className="muted" style={{fontSize:13,marginTop:4}}>System quantity is snapshotted when the line is entered.</div></div><Plus size={19}/></div>
+    <FormDetails title="Start stock count" hint="Nothing changes in stock until the count is closed." open={!open.length}>
+      <ActionForm action={createStockCountSessionAction} success="Count started">
         <div className="form-grid two">
-          <div className="field span-2"><label>Open session</label><select name="sessionId" required defaultValue=""><option value="" disabled>Select session</option>{open.map(session=><option key={session.id} value={session.id}>{session.sessionNo} · {warehouseNames.get(session.warehouseId)||"Warehouse"}</option>)}</select></div>
-          <div className="field"><label>Product</label><select name="productId" required defaultValue=""><option value="" disabled>Select product</option>{products.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-          <div className="field"><label>Lot number</label><input name="lotNumber"/></div>
-          <div className="field"><label>Counted quantity</label><input name="countedQuantity" required type="number" min="0" step="0.001"/></div>
+          <div className="field"><label>Warehouse</label><select name="warehouseId" required defaultValue=""><option value="" disabled>Select warehouse</option>{warehouses.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
           <div className="field"><label>Notes</label><input name="notes"/></div>
         </div>
-        <div className="form-actions"><button className="button" disabled={!open.length||!products.length}>Save count line</button></div>
+        <div className="form-actions"><button className="button" disabled={!warehouses.length}>Start count</button></div>
       </ActionForm>
-    </div>
+    </FormDetails>
 
-    {sessions.length?<div className="card"><div className="card-head"><div><h2>Count sessions</h2><div className="muted" style={{fontSize:13,marginTop:4}}>Closing a session posts one immutable adjustment per non-zero line.</div></div></div><div style={{display:"grid",gap:14}}>{sessions.map(session=><div key={session.id} style={{border:"1px solid var(--line)",borderRadius:14,padding:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-        <div><b>{session.sessionNo}</b><div className="muted" style={{fontSize:12}}>{warehouseNames.get(session.warehouseId)||"Warehouse"} · started {safeDate(session.startedAt)} · {session.lines.length} line(s)</div></div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}><span className={"status "+(session.status==="OPEN"?"neutral":"")}>{session.status}</span>{session.status==="OPEN"?<><ActionForm action={closeStockCountSessionAction}><input type="hidden" name="id" value={session.id}/><button className="button small"><CheckCircle2 size={15}/> Close & post</button></ActionForm><ActionForm action={cancelStockCountSessionAction}><input type="hidden" name="id" value={session.id}/><button className="button secondary small"><XCircle size={15}/> Cancel</button></ActionForm></>:null}</div>
+    {sessions.map(session=><div className="card" key={session.id}>
+      <div className="card-head">
+        <div><h2>{session.sessionNo}</h2><div className="card-sub">{warehouseNames.get(session.warehouseId)||"Warehouse"} · started {safeDate(session.startedAt)} · {session.lines.length} line{session.lines.length===1?"":"s"}</div></div>
+        <div className="inline-actions"><span className={`status ${sessionTone(session.status)}`}>{humanize(session.status)}</span>{session.status==="OPEN"?<>
+          <ActionForm action={closeStockCountSessionAction}><input type="hidden" name="id" value={session.id}/><button className="button small"><CheckCircle2 size={15}/> Close &amp; post</button></ActionForm>
+          <ActionForm action={cancelStockCountSessionAction}><input type="hidden" name="id" value={session.id}/><button className="button secondary small"><XCircle size={15}/> Cancel</button></ActionForm>
+        </>:null}</div>
       </div>
-      {session.lines.length?<div className="table-wrap" style={{marginTop:12}}><table><thead><tr><th>Product</th><th>Lot</th><th>System</th><th>Counted</th><th>Variance</th><th>Adjustment</th></tr></thead><tbody>{session.lines.map(line=>{const product=productNames.get(line.productId);const variance=line.variance==null?null:Number(line.variance);return <tr key={line.id}><td>{product?.name||line.productId}</td><td>{line.lotNumber||"—"}</td><td>{formatNumber(line.systemQuantity,3)} {product?.unit||""}</td><td>{line.countedQuantity==null?"—":formatNumber(line.countedQuantity,3)}</td><td>{variance==null?"—":<span className={"status "+(variance!==0?"warn":"")}>{variance>0?"+":""}{formatNumber(variance,3)}</span>}</td><td>{line.adjustmentTxnId?"Posted":"—"}</td></tr>})}</tbody></table></div>:null}
-    </div>)}</div></div>:null}
+      {session.lines.length?<div className="table-wrap"><table><thead><tr><th>Product</th><th>Lot</th><th className="text-right">System</th><th className="text-right">Counted</th><th className="text-right">Variance</th><th>Adjustment</th></tr></thead><tbody>{session.lines.map(line=>{
+        const product=productNames.get(line.productId);
+        const variance=line.variance==null?null:Number(line.variance);
+        return <tr key={line.id}><td>{product?.name||line.productId}</td><td>{line.lotNumber||"—"}</td><td className="text-right nowrap">{formatNumber(line.systemQuantity,3)} {product?.unit||""}</td><td className="text-right">{line.countedQuantity==null?"—":formatNumber(line.countedQuantity,3)}</td><td className="text-right">{variance==null?"—":<span className={`status ${variance!==0?"warn":""}`}>{variance>0?"+":""}{formatNumber(variance,3)}</span>}</td><td>{line.adjustmentTxnId?"Posted":"—"}</td></tr>;
+      })}</tbody></table></div>:<p className="muted small-text">No lines counted yet.</p>}
+    </div>)}
   </div>;
 }

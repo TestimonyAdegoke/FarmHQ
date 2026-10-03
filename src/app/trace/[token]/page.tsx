@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
-import { CheckCircle2, GitBranch, Leaf, PackageCheck } from "lucide-react";
+import { BadgeCheck } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { db } from "@/lib/db";
-import { formatNumber, safeDate } from "@/lib/utils";
+import { formatNumber, humanize, safeDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Lot trace" };
 
 export default async function PublicTracePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -21,15 +22,43 @@ export default async function PublicTracePage({ params }: { params: Promise<{ to
     lot.cycleId ? db.productionCycle.findFirst({ where: { id: lot.cycleId, tenantId: lot.tenantId }, select: { name: true, commodity: true, variety: true } }) : null,
     lot.harvestRecordId ? db.harvestRecord.findFirst({ where: { id: lot.harvestRecordId, tenantId: lot.tenantId }, select: { harvestedAt: true, quantity: true, unit: true, grade: true } }) : null,
   ]);
+  const quantity = lot.quantity != null ? formatNumber(lot.quantity, 3) : harvest ? formatNumber(harvest.quantity, 3) : null;
 
-  return <main className="auth-shell" style={{alignItems:"flex-start",paddingTop:28}}>
-    <section style={{width:"min(900px,100%)",display:"grid",gap:16}}>
-      <div className="card"><Brand/><div className="eyebrow" style={{marginTop:24}}>Verified lot trace</div><h1 style={{marginBottom:6}}>{lot.lotCode}</h1><p>{tenant?.name||"FarmHQ producer"} · {product?.name||cycle?.commodity||"Farm produce"}</p><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:14}}><span className="status"><CheckCircle2 size={14}/> Trace record found</span><span className={"status "+(lot.status==="QUARANTINED"?"warn":"")}>{lot.status}</span></div></div>
-      <div className="grid-2">
-        <div className="card"><div className="card-head"><h2>Origin</h2><Leaf size={19}/></div><div style={{display:"grid",gap:10,fontSize:14}}><div><span className="muted">Farm</span><br/><b>{farm?.name||"Not disclosed"}</b></div><div><span className="muted">Location</span><br/><b>{[farm?.state,farm?.country].filter(Boolean).join(", ")||"Not disclosed"}</b></div><div><span className="muted">Production cycle</span><br/><b>{cycle?.name||"Not linked"}</b>{cycle?.variety?<span className="muted"> · {cycle.variety}</span>:null}</div><div><span className="muted">Harvest</span><br/><b>{safeDate(harvest?.harvestedAt||lot.harvestedAt)}</b></div></div></div>
-        <div className="card"><div className="card-head"><h2>Lot details</h2><PackageCheck size={19}/></div><div style={{display:"grid",gap:10,fontSize:14}}><div><span className="muted">Quantity</span><br/><b>{lot.quantity!=null?formatNumber(lot.quantity,3):harvest?formatNumber(harvest.quantity,3):"—"} {lot.unit||harvest?.unit||""}</b></div><div><span className="muted">Grade</span><br/><b>{lot.grade||harvest?.grade||"—"}</b></div><div><span className="muted">Best before / expiry</span><br/><b>{safeDate(lot.expiresAt)}</b></div><div><span className="muted">Lineage</span><br/><b>{lot.parent?"Derived from "+lot.parent.lotCode:"Original lot"}</b>{lot.children.length?<div className="muted">Split or repacked into {lot.children.map(c=>c.lotCode).join(", ")}</div>:null}</div></div></div>
-      </div>
-      <div className="card"><div className="card-head"><div><h2>Chain of custody</h2><div className="muted" style={{fontSize:13,marginTop:4}}>Append-only operational milestones recorded in FarmHQ.</div></div><GitBranch size={19}/></div>{lot.events.length?<div style={{display:"grid",gap:10}}>{lot.events.map((event,index)=><div key={event.id} style={{display:"grid",gridTemplateColumns:"34px 1fr",gap:10,alignItems:"start"}}><div className="status" style={{justifyContent:"center"}}>{index+1}</div><div><b>{event.type.replaceAll("_"," ")}</b><div className="muted" style={{fontSize:13}}>{safeDate(event.occurredAt)}{event.location?" · "+event.location:""}{event.reference?" · Ref "+event.reference:""}</div></div></div>)}</div>:<div className="empty"><strong>No custody events recorded</strong></div>}</div>
+  return <main className="public-shell">
+    <header className="public-head"><Brand/><span className="status"><BadgeCheck size={13} aria-hidden/> Verified trace record</span></header>
+
+    <section className="public-title">
+      <div className="eyebrow">{tenant?.name || "FarmHQ producer"}</div>
+      <h1>{product?.name || cycle?.commodity || "Farm produce"}</h1>
+      <p>Lot <b>{lot.lotCode}</b> · <span className={`status ${lot.status === "QUARANTINED" ? "warn" : ["CONSUMED", "CLOSED"].includes(lot.status) ? "neutral" : ""}`}>{humanize(lot.status)}</span></p>
     </section>
+
+    <div className="grid-2">
+      <section className="card"><div className="card-head"><h2>Origin</h2></div>
+        <dl className="kv">
+          <dt>Farm</dt><dd>{farm?.name || "Not disclosed"}</dd>
+          <dt>Location</dt><dd>{[farm?.state, farm?.country].filter(Boolean).join(", ") || "Not disclosed"}</dd>
+          <dt>Production cycle</dt><dd>{cycle?.name || "Not linked"}{cycle?.variety ? ` · ${cycle.variety}` : ""}</dd>
+          <dt>Harvested</dt><dd>{safeDate(harvest?.harvestedAt || lot.harvestedAt)}</dd>
+        </dl>
+      </section>
+      <section className="card"><div className="card-head"><h2>Lot details</h2></div>
+        <dl className="kv">
+          <dt>Quantity</dt><dd>{quantity ? `${quantity} ${lot.unit || harvest?.unit || ""}` : "—"}</dd>
+          <dt>Grade</dt><dd>{lot.grade || harvest?.grade || "—"}</dd>
+          <dt>Best before</dt><dd>{safeDate(lot.expiresAt)}</dd>
+          <dt>Lineage</dt><dd>{lot.parent ? `From ${lot.parent.lotCode}` : "Original lot"}{lot.children.length ? <div className="sub">Repacked into {lot.children.map(c => c.lotCode).join(", ")}</div> : null}</dd>
+        </dl>
+      </section>
+    </div>
+
+    <section className="card"><div className="card-head"><div><h2>Chain of custody</h2><div className="card-sub">Each step was recorded by the producer as it happened and cannot be edited afterwards.</div></div></div>
+      {lot.events.length ? <ol className="timeline">{lot.events.map(event => <li key={event.id}>
+        <b>{humanize(event.type)}</b>
+        <div className="sub">{safeDate(event.occurredAt)}{event.location ? ` · ${event.location}` : ""}{event.reference ? ` · Ref ${event.reference}` : ""}</div>
+      </li>)}</ol> : <div className="empty"><strong>No custody events recorded yet</strong></div>}
+    </section>
+
+    <footer className="public-foot">Traceability by FarmHQ</footer>
   </main>;
 }

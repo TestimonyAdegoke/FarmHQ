@@ -5,9 +5,8 @@ import { setPayRunStatusAction, updatePayRunLineAction } from "@/app/people-acti
 import { ActionForm } from "@/components/action-form";
 import { PrintButton } from "@/components/print-button";
 import { db } from "@/lib/db";
-import { label } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, formatNumber, safeDate, whatsappLink } from "@/lib/utils";
+import { formatMoney, formatNumber, humanize, safeDate, whatsappLink } from "@/lib/utils";
 
 export const metadata = { title: "Pay run" };
 
@@ -41,7 +40,7 @@ export default async function PayRunPage({ params }: { params: Promise<{ id: str
     <article className="doc" style={{ maxWidth: "none" }}>
       <div className="doc-head">
         <div><h1>{ctx.tenant.name}</h1><div className="muted" style={{ marginTop: 6 }}>Payroll sheet · {period}</div></div>
-        <div style={{ textAlign: "right" }}><div className="eyebrow">Pay run</div><h2 style={{ margin: "6px 0" }}>{run.runNo}</h2>{run.status === "PAID" ? <span className="stamp paid">PAID</span> : <span className={`status ${run.status === "CANCELLED" ? "neutral" : "warn"}`}>{run.status.toLowerCase()}</span>}</div>
+        <div style={{ textAlign: "right" }}><div className="eyebrow">Pay run</div><h2 style={{ margin: "6px 0" }}>{run.runNo}</h2>{run.status === "PAID" ? <span className="stamp paid">PAID</span> : <span className={`status ${run.status === "CANCELLED" ? "neutral" : run.status === "APPROVED" ? "info" : "warn"}`}>{humanize(run.status)}</span>}</div>
       </div>
       <div className="doc-meta">
         <div><small>Workers</small>{run.lines.length}</div>
@@ -50,11 +49,11 @@ export default async function PayRunPage({ params }: { params: Promise<{ id: str
       </div>
       <div className="table-wrap"><table><thead><tr><th>Worker</th><th>Basis</th><th className="text-right">Units</th><th className="text-right">Gross</th><th className="text-right">Allowances</th><th className="text-right">Deductions</th><th className="text-right">Advance</th><th className="text-right">Net pay</th><th className="no-print"></th></tr></thead><tbody>
         {run.lines.map(l => <tr key={l.id}>
-          <td><b>{l.worker.name}</b><div className="sub">{l.paymentMethod ? label(l.paymentMethod) : ""} {l.worker.paymentAccount || ""}</div>{l.notes ? <div className="sub">{l.notes}</div> : null}</td>
-          <td>{label(l.basis)}</td>
+          <td><b>{l.worker.name}</b><div className="sub">{[l.paymentMethod ? humanize(l.paymentMethod) : "", l.worker.paymentAccount].filter(Boolean).join(" · ")}</div>{l.notes ? <div className="sub">{l.notes}</div> : null}</td>
+          <td>{humanize(l.basis)}</td>
           <td className="text-right">{formatNumber(l.units, 2)} {unitsOf(l)}</td>
           <td className="text-right">{money(l.grossPay)}</td>
-          {editable ? <td colSpan={2} className="no-print"><ActionForm action={updatePayRunLineAction} reset={false}><input type="hidden" name="id" value={l.id} /><div className="inline-actions" style={{ justifyContent: "flex-end" }}><input name="allowances" type="number" min="0" step="0.01" defaultValue={Number(l.allowances)} aria-label="Allowances" style={{ width: 100 }} /><input name="deductions" type="number" min="0" step="0.01" defaultValue={Number(l.deductions)} aria-label="Deductions" style={{ width: 100 }} /><button className="button secondary small">Update</button></div></ActionForm></td> : <><td className="text-right">{money(l.allowances)}</td><td className="text-right">{money(l.deductions)}</td></>}
+          {editable ? <td colSpan={2} className="no-print"><ActionForm action={updatePayRunLineAction} reset={false}><input type="hidden" name="id" value={l.id} /><div className="inline-actions" style={{ justifyContent: "flex-end" }}><input name="allowances" type="number" min="0" step="0.01" defaultValue={Number(l.allowances)} aria-label="Allowances" style={{ width: 100 }} /><input name="deductions" type="number" min="0" step="0.01" defaultValue={Number(l.deductions)} aria-label="Deductions" style={{ width: 100 }} /><button className="button secondary small">Update</button></div></ActionForm></td> : null}{editable ? <><td className="text-right print-only">{money(l.allowances)}</td><td className="text-right print-only">{money(l.deductions)}</td></> : <><td className="text-right">{money(l.allowances)}</td><td className="text-right">{money(l.deductions)}</td></>}
           <td className="text-right">{Number(l.advanceRecovery) ? `−${money(l.advanceRecovery)}` : "—"}</td>
           <td className="text-right"><b>{money(l.netPay)}</b></td>
           <td className="no-print">{l.worker.phone ? <a className="icon-button" title="Send payslip on WhatsApp" href={whatsappLink(l.worker.phone, payslipText(l))} target="_blank" rel="noreferrer"><MessageCircle size={15} /></a> : null}</td>
@@ -63,7 +62,7 @@ export default async function PayRunPage({ params }: { params: Promise<{ id: str
       <div className="grid-2" style={{ marginTop: 40 }}><div><div style={{ borderTop: "1px solid var(--ink)", paddingTop: 6 }} className="small-text">Prepared by</div></div><div><div style={{ borderTop: "1px solid var(--ink)", paddingTop: 6 }} className="small-text">Approved by</div></div></div>
     </article>
 
-    <div className="inline-actions no-print" style={{ marginTop: 20 }}>
+    <div className="inline-actions no-print">
       {run.status === "DRAFT" && ctx.can("workforce.manage") ? <ActionForm action={setPayRunStatusAction} confirm="Approve this pay run? Lines can no longer be edited."><input type="hidden" name="id" value={run.id} /><input type="hidden" name="status" value="APPROVED" /><button className="button">Approve pay run</button></ActionForm> : null}
       {run.status === "APPROVED" && ctx.can("finance.manage") ? <ActionForm action={setPayRunStatusAction} confirm={`Record ${money(sum("netPay"))} as paid?`}><input type="hidden" name="id" value={run.id} /><input type="hidden" name="status" value="PAID" /><select name="accountId" required defaultValue=""><option value="" disabled>Paid from account…</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="button">Mark as paid</button></ActionForm> : null}
       {run.status === "APPROVED" && ctx.can("workforce.manage") ? <ActionForm action={setPayRunStatusAction}><input type="hidden" name="id" value={run.id} /><input type="hidden" name="status" value="DRAFT" /><button className="button secondary">Back to draft</button></ActionForm> : null}

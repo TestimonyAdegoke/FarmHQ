@@ -48,15 +48,15 @@ export default async function AccountsPage() {
   return <>
     <PageHeader eyebrow="Money" title="Cash & bank" description="Know exactly how much money the farm has, and where: cash box, bank accounts and mobile-money wallets." />
     <section className="metrics">
-      <MetricCard label="Total available" value={money(total)} hint={`${active.length} active accounts`} icon={<Wallet size={18} />} />
-      <MetricCard label="Cash" value={money(byType("CASH"))} hint="Cash boxes / petty cash" icon={<Wallet size={18} />} />
-      <MetricCard label="Bank" value={money(byType("BANK"))} hint="Bank accounts" icon={<Landmark size={18} />} />
-      <MetricCard label="Mobile money" value={money(byType("MOBILE_MONEY"))} hint="Wallets (M-Pesa, MoMo, OPay…)" icon={<Smartphone size={18} />} />
+      <MetricCard label="Total available" value={money(total)} hint={`${active.length} active accounts`} icon={<Wallet size={16} />} />
+      <MetricCard label="Cash" value={money(byType("CASH"))} hint="Cash boxes / petty cash" icon={<Wallet size={16} />} />
+      <MetricCard label="Bank" value={money(byType("BANK"))} hint="Bank accounts" icon={<Landmark size={16} />} />
+      <MetricCard label="Mobile money" value={money(byType("MOBILE_MONEY"))} hint="Wallets (M-Pesa, MoMo, OPay…)" icon={<Smartphone size={16} />} />
     </section>
 
-    {canManage ? <div className="grid-2">
+    {canManage ? <div className="drawers">
       <FormDetails title="Add account" hint="Start with what you have today as the opening balance." open={!accounts.length}>
-        <ActionForm action={createMoneyAccountAction}>
+        <ActionForm action={createMoneyAccountAction} success="Account added">
           <div className="form-grid two">
             <div className="field"><label>Name</label><input name="name" required placeholder="Farm cash box / GTBank / MTN MoMo" /></div>
             <div className="field"><label>Type</label><select name="type" defaultValue="CASH"><option value="CASH">Cash</option><option value="BANK">Bank account</option><option value="MOBILE_MONEY">Mobile money</option><option value="OTHER">Other</option></select></div>
@@ -68,7 +68,7 @@ export default async function AccountsPage() {
         </ActionForm>
       </FormDetails>
       <FormDetails title="Move money between accounts" hint="e.g. banking cash sales, or loading a mobile-money wallet.">
-        <ActionForm action={transferFundsAction}>
+        <ActionForm action={transferFundsAction} success="Transfer recorded">
           <div className="form-grid two">
             <div className="field"><label>From</label><select name="fromAccountId" required defaultValue=""><option value="" disabled>Select</option>{active.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
             <div className="field"><label>To</label><select name="toAccountId" required defaultValue=""><option value="" disabled>Select</option>{active.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
@@ -81,10 +81,10 @@ export default async function AccountsPage() {
       </FormDetails>
     </div> : null}
 
-    {accounts.length ? <div className="table-wrap" style={{ marginBottom: 20 }}><table><thead><tr><th>Account</th><th>Type</th><th className="text-right">Opening</th><th className="text-right">Money in</th><th className="text-right">Money out</th><th className="text-right">Balance</th><th></th></tr></thead><tbody>{accounts.map(a => {
+    {accounts.length ? <div className="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th className="text-right">Opening</th><th className="text-right">Money in</th><th className="text-right">Money out</th><th className="text-right">Balance</th><th></th></tr></thead><tbody>{accounts.map(a => {
       const b = balances.get(a.id);
       return <tr key={a.id} style={a.active ? undefined : { opacity: .55 }}>
-        <td><b>{a.name}</b><div className="sub">{[a.provider, a.accountNumber].filter(Boolean).join(" · ")}</div></td>
+        <td><b>{a.name}</b>{a.active ? null : <> <span className="status neutral">Archived</span></>}<div className="sub">{[a.provider, a.accountNumber].filter(Boolean).join(" · ")}</div></td>
         <td>{label(a.type)}</td>
         <td className="text-right">{money(a.openingBalance)}</td>
         <td className="text-right">{money(b?.inflow || 0)}</td>
@@ -92,10 +92,10 @@ export default async function AccountsPage() {
         <td className="text-right"><span className={`status ${(b?.balance || 0) < 0 ? "danger" : ""}`}>{money(b?.balance || 0)}</span></td>
         <td>{canManage ? <ActionForm action={toggleMoneyAccountAction}><input type="hidden" name="id" value={a.id} /><button className="button secondary small">{a.active ? "Archive" : "Restore"}</button></ActionForm> : null}</td>
       </tr>;
-    })}</tbody></table></div> : <div className="card" style={{ marginBottom: 20 }}><EmptyState title="No accounts yet" text="Add your cash box, bank account and mobile-money wallet to track the farm's money." /></div>}
+    })}</tbody></table></div> : <div className="card"><EmptyState title="No accounts yet" text="Add your cash box, bank account and mobile-money wallet to track the farm's money." /></div>}
 
-    <div className="card"><div className="card-head"><h2>Recent money movements</h2></div>
-      {movements.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Account</th><th>Details</th><th className="text-right">Amount</th></tr></thead><tbody>{movements.map((m, i) => <tr key={i}><td>{safeDate(m.date)}</td><td>{m.account}</td><td>{m.text}<div className="sub">{m.ref || ""}</div></td><td className="text-right nowrap">{m.amount >= 0 ? <span style={{ color: "var(--brand)" }}><ArrowDownLeft size={13} /> {money(m.amount)}</span> : <span style={{ color: "var(--danger)" }}><ArrowUpRight size={13} /> {money(-m.amount)}</span>}</td></tr>)}</tbody></table></div> : <p className="muted">Payments, expenses, transfers and wages paid through an account appear here.</p>}
+    <div className="card"><div className="card-head"><div><h2>Recent money movements</h2><div className="card-sub">Latest money in and out across all accounts</div></div></div>
+      {movements.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Account</th><th>Details</th><th className="text-right">Amount</th></tr></thead><tbody>{movements.map((m, i) => <tr key={i}><td>{safeDate(m.date)}</td><td>{m.account}</td><td>{m.text}<div className="sub">{m.ref || ""}</div></td><td className="text-right nowrap">{m.amount >= 0 ? <span style={{ color: "var(--brand)" }}><ArrowDownLeft size={13} /> {money(m.amount)}</span> : <span style={{ color: "var(--danger)" }}><ArrowUpRight size={13} /> {money(-m.amount)}</span>}</td></tr>)}</tbody></table></div> : <EmptyState title="No money movements yet" text="Payments, expenses, transfers and wages paid through an account appear here." />}
     </div>
   </>;
 }

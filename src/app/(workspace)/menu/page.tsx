@@ -23,9 +23,9 @@ export default async function MenuPage() {
     <section className="menu-group"><h2>Account</h2>
       <div className="menu-grid">
         <Link href="/profile" className="menu-tile"><span className="icon-box"><UserRound size={18} /></span><b>{ctx.user.name}</b><small>Profile & password</small></Link>
-        <form action={logoutAction} className="menu-tile" style={{ justifyContent: "center" }}><button className="button secondary" style={{ width: "100%" }}><LogOut size={16} /> Sign out</button></form>
+        <form action={logoutAction} style={{ display: "contents" }}><button className="menu-tile" style={{ width: "100%", textAlign: "left" }}><span className="icon-box"><LogOut size={18} /></span><b>Sign out</b><small>End this session on this device</small></button></form>
       </div>
-      {memberships.length > 1 ? <form action={switchTenantAction} className="card" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}><select name="tenantId" defaultValue={ctx.tenantId} aria-label="Workspace" style={{ flex: 1, minWidth: 180 }}>{memberships.map(m => <option key={m.tenantId} value={m.tenantId}>{m.tenant.name}</option>)}</select><button className="button">Switch workspace</button></form> : null}
+      {memberships.length > 1 ? <form action={switchTenantAction} className="card inline-actions" style={{ marginTop: 12 }}><select name="tenantId" defaultValue={ctx.tenantId} aria-label="Workspace" style={{ flex: 1, minWidth: 180 }}>{memberships.map(m => <option key={m.tenantId} value={m.tenantId}>{m.tenant.name}</option>)}</select><button className="button small">Switch workspace</button></form> : null}
     </section>
   </>;
 }

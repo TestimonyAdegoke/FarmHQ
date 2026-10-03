@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { invoiceBalance, invoiceDisplayStatus } from "@/lib/ledger";
 import { invoiceStatusClass, revenueTypes } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, safeDate } from "@/lib/utils";
+import { formatMoney, humanize, safeDate } from "@/lib/utils";
 
 export const metadata = { title: "Invoices" };
 
@@ -51,13 +51,13 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   return <>
     <PageHeader eyebrow="Sell & get paid" title="Invoices" description="Every bill you have issued, what has been paid and who still owes." action={<Link className="button secondary small" href="/sales">Orders &amp; customers</Link>} />
     <section className="metrics">
-      <MetricCard label="Outstanding" value={money(outstanding)} hint={`${openAgg.length} unpaid invoices`} icon={<HandCoins size={18} />} />
-      <MetricCard label="Overdue" value={money(overdue.reduce((s, i) => s + invoiceBalance(i), 0))} hint={`${overdue.length} invoices past due`} icon={<AlarmClock size={18} />} />
-      <MetricCard label="1–30 days late" value={money(buckets[0])} hint={`31–60: ${money(buckets[1])}`} icon={<ReceiptText size={18} />} />
-      <MetricCard label="Over 60 days late" value={money(buckets[2] + buckets[3])} hint={`90+: ${money(buckets[3])}`} icon={<FileText size={18} />} />
+      <MetricCard label="Outstanding" value={money(outstanding)} hint={`${openAgg.length} unpaid invoices`} icon={<HandCoins size={16} />} />
+      <MetricCard label="Overdue" value={money(overdue.reduce((s, i) => s + invoiceBalance(i), 0))} hint={`${overdue.length} invoices past due`} icon={<AlarmClock size={16} />} />
+      <MetricCard label="1–30 days late" value={money(buckets[0])} hint={`31–60: ${money(buckets[1])}`} icon={<ReceiptText size={16} />} />
+      <MetricCard label="Over 60 days late" value={money(buckets[2] + buckets[3])} hint={`90+: ${money(buckets[3])}`} icon={<FileText size={16} />} />
     </section>
 
-    {ctx.can("sales.manage") ? <FormDetails title="Create invoice" hint="Bill a customer directly — e.g. services, tractor hire, or produce delivered without an order.">
+    {ctx.can("sales.manage") ? <FormDetails title="Create invoice" hint="Bill a customer directly: services, tractor hire, or produce delivered without an order.">
       <ActionForm action={createInvoiceAction} reset={false}>
         <div className="form-grid">
           <div className="field span-2"><label>Customer</label><select name="customerId" defaultValue=""><option value="">New customer (enter name)</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
@@ -75,9 +75,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
       </ActionForm>
     </FormDetails> : null}
 
-    <div className="tabs" style={{ alignItems: "center" }}>
-      {filters.map(([key, label]) => <Link key={key} href={`/sales/invoices?status=${key}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className={filter === key ? "active" : ""}>{label}</Link>)}
-      <form style={{ marginLeft: "auto", display: "flex", gap: 6 }}><input type="hidden" name="status" value={filter} /><input name="q" defaultValue={q} placeholder="Search invoice or customer" style={{ width: 220 }} /><button className="button secondary small">Search</button></form>
+    <div className="toolbar">
+      <div className="segmented">{filters.map(([key, label]) => <Link key={key} href={`/sales/invoices?status=${key}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className={filter === key ? "active" : ""}>{label}</Link>)}</div>
+      <form><input type="hidden" name="status" value={filter} /><input name="q" defaultValue={q} placeholder="Search invoice or customer" aria-label="Search invoices" /><button className="button secondary small">Search</button></form>
     </div>
 
     {invoices.length ? <div className="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th className="text-right">Total</th><th className="text-right">Balance</th><th>Status</th></tr></thead><tbody>{invoices.map(i => {
@@ -88,7 +88,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
         <td>{safeDate(i.dueDate)}</td>
         <td className="text-right">{money(i.total)}</td>
         <td className="text-right"><b>{i.status === "VOID" ? "—" : money(invoiceBalance(i))}</b></td>
-        <td><span className={`status ${invoiceStatusClass(status)}`}>{status.replaceAll("_", " ").toLowerCase()}</span></td>
+        <td><span className={`status ${invoiceStatusClass(status)}`}>{humanize(status)}</span></td>
       </tr>;
     })}</tbody></table></div> : <div className="card"><EmptyState title="No invoices here" text={filter === "open" ? "Nobody owes you money right now." : "Try another filter."} /></div>}
   </>;

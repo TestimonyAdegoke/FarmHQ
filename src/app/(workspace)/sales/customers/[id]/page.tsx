@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { AlarmClock, ArrowLeft, HandCoins, MessageCircle, ReceiptText, Wallet } from "lucide-react";
 import { receiveCustomerPaymentAction, saveCustomerAction } from "@/app/commerce-actions";
 import { ActionForm } from "@/components/action-form";
+import { EmptyState } from "@/components/empty-state";
 import { FormDetails } from "@/components/form-details";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
@@ -12,7 +13,6 @@ import { invoiceBalance, isOverdue } from "@/lib/ledger";
 import { label, paymentMethods } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
 import { formatMoney, safeDate, toDateInput, whatsappLink } from "@/lib/utils";
-import { AlarmClock, HandCoins, ReceiptText, Wallet } from "lucide-react";
 
 export const metadata = { title: "Customer statement" };
 
@@ -42,23 +42,25 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const net = outstanding - credit;
   const reminder = `Hello ${customer.name}, this is ${ctx.tenant.name}. Your account balance is ${money(net)}${overdue ? `, of which ${money(overdue)} is overdue` : ""}. Open invoices: ${openInvoices.map(i => `${i.invoiceNo} (${money(invoiceBalance(i))})`).join(", ") || "none"}. Thank you.`;
 
+  const canReceive = (ctx.can("sales.manage") || ctx.can("finance.manage")) && outstanding > 0;
+  const canEdit = ctx.can("sales.manage");
+
   return <>
-    <div className="doc-actions no-print">
+    <PageHeader eyebrow="Customer statement" title={customer.name} description={[customer.phone, customer.email, customer.address].filter(Boolean).join(" · ") || "No contact details yet"} action={<div className="doc-actions no-print">
       <Link href="/sales?view=customers" className="button secondary small"><ArrowLeft size={15} /> Customers</Link>
       <PrintButton label="Print statement" />
       {net > 0 ? <a className="button secondary small" href={whatsappLink(customer.phone, reminder)} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Send reminder</a> : null}
-    </div>
-    <PageHeader eyebrow="Customer statement" title={customer.name} description={[customer.phone, customer.email, customer.address].filter(Boolean).join(" · ") || "No contact details yet"} />
+    </div>} />
     <section className="metrics">
-      <MetricCard label="Balance owed" value={money(net)} hint={credit ? `after ${money(credit)} credit` : "Open invoices"} icon={<HandCoins size={18} />} />
-      <MetricCard label="Overdue" value={money(overdue)} hint={customer.paymentTermsDays ? `${customer.paymentTermsDays}-day terms` : "Cash terms"} icon={<AlarmClock size={18} />} />
-      <MetricCard label="Total billed" value={money(billed)} hint={`${live.length} invoices`} icon={<ReceiptText size={18} />} />
-      <MetricCard label="Credit limit" value={customer.creditLimit != null ? money(customer.creditLimit) : "None"} hint={customer.creditLimit != null && outstanding > Number(customer.creditLimit) ? "Limit exceeded" : "Within limit"} icon={<Wallet size={18} />} />
+      <MetricCard label="Balance owed" value={money(net)} hint={credit ? `after ${money(credit)} credit` : "Open invoices"} icon={<HandCoins size={16} />} />
+      <MetricCard label="Overdue" value={money(overdue)} hint={customer.paymentTermsDays ? `${customer.paymentTermsDays}-day terms` : "Cash terms"} icon={<AlarmClock size={16} />} />
+      <MetricCard label="Total billed" value={money(billed)} hint={`${live.length} invoice${live.length === 1 ? "" : "s"}`} icon={<ReceiptText size={16} />} />
+      <MetricCard label="Credit limit" value={customer.creditLimit != null ? money(customer.creditLimit) : "None"} hint={customer.creditLimit != null && outstanding > Number(customer.creditLimit) ? "Limit exceeded" : "Within limit"} icon={<Wallet size={16} />} />
     </section>
 
-    <div className="grid-2 no-print" style={{ marginBottom: 20 }}>
-      {(ctx.can("sales.manage") || ctx.can("finance.manage")) && outstanding > 0 ? <FormDetails title="Receive payment" hint="Applied to the oldest unpaid invoices first." open>
-        <ActionForm action={receiveCustomerPaymentAction}>
+    {canReceive || canEdit ? <div className="drawers no-print">
+      {canReceive ? <FormDetails title="Receive payment" hint="Applied to the oldest unpaid invoices first." open>
+        <ActionForm action={receiveCustomerPaymentAction} success="Payment saved">
           <input type="hidden" name="customerId" value={customer.id} />
           <div className="form-grid two">
             <div className="field"><label>Amount</label><input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required defaultValue={outstanding.toFixed(2)} /></div>
@@ -69,9 +71,9 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           </div>
           <div className="form-actions"><button className="button">Save payment</button></div>
         </ActionForm>
-      </FormDetails> : <div />}
-      {ctx.can("sales.manage") ? <FormDetails title="Edit customer details">
-        <ActionForm action={saveCustomerAction} reset={false}>
+      </FormDetails> : null}
+      {canEdit ? <FormDetails title="Edit customer details">
+        <ActionForm action={saveCustomerAction} reset={false} success="Saved">
           <input type="hidden" name="id" value={customer.id} />
           <div className="form-grid two">
             <div className="field span-2"><label>Name</label><input name="name" required defaultValue={customer.name} /></div>
@@ -84,12 +86,12 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <div className="form-actions"><button className="button">Save</button></div>
         </ActionForm>
       </FormDetails> : null}
-    </div>
+    </div> : null}
 
-    <div className="card"><div className="card-head"><h2>Account activity</h2><span className="muted small-text">As of {safeDate(new Date())}</span></div>
+    <div className="card"><div className="card-head"><div><h2>Account activity</h2><div className="card-sub">As of {safeDate(new Date())}</div></div></div>
       {entries.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Document</th><th>Details</th><th className="text-right">Billed</th><th className="text-right">Paid</th><th className="text-right">Balance</th></tr></thead><tbody>{entries.map((e, i) => {
         return <tr key={i}><td>{safeDate(e.date)}</td><td>{e.href ? <Link className="link" href={e.href}>{e.ref}</Link> : e.ref}</td><td>{e.text}</td><td className="text-right">{e.debit ? money(e.debit) : ""}</td><td className="text-right">{e.credit ? money(e.credit) : ""}</td><td className="text-right"><b>{money(e.balance)}</b></td></tr>;
-      })}</tbody></table></div> : <p className="muted">No invoices or payments yet.</p>}
+      })}</tbody></table></div> : <EmptyState title="No activity yet" text="Invoices and payments for this customer will appear here." />}
     </div>
   </>;
 }

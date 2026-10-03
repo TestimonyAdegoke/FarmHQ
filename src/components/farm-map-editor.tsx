@@ -87,8 +87,8 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
           : [];
       });
       map.addSource("other-units", { type: "geojson", data: { type: "FeatureCollection", features } });
-      map.addLayer({ id: "other-fill", type: "fill", source: "other-units", paint: { "fill-color": "#1f6b45", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "other-line", type: "line", source: "other-units", paint: { "line-color": "#1f6b45", "line-width": 1.5 } });
+      map.addLayer({ id: "other-fill", type: "fill", source: "other-units", paint: { "fill-color": "#2f5d3a", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "other-line", type: "line", source: "other-units", paint: { "line-color": "#2f5d3a", "line-width": 1.5 } });
 
       const initialPolygon = polygonFromCoordinates(initialPointsRef.current);
       const initialFeatures: GeoJSON.Feature[] = [];
@@ -97,9 +97,9 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
         initialFeatures.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: point } });
       }
       map.addSource("edited-unit", { type: "geojson", data: { type: "FeatureCollection", features: initialFeatures } });
-      map.addLayer({ id: "edited-fill", type: "fill", source: "edited-unit", paint: { "fill-color": "#c7e66b", "fill-opacity": 0.34 } });
-      map.addLayer({ id: "edited-line", type: "line", source: "edited-unit", paint: { "line-color": "#154c31", "line-width": 3 } });
-      map.addLayer({ id: "edited-points", type: "circle", source: "edited-unit", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#154c31", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "edited-fill", type: "fill", source: "edited-unit", paint: { "fill-color": "#cfe46a", "fill-opacity": 0.34 } });
+      map.addLayer({ id: "edited-line", type: "line", source: "edited-unit", paint: { "line-color": "#244a2d", "line-width": 3 } });
+      map.addLayer({ id: "edited-points", type: "circle", source: "edited-unit", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#244a2d", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
 
       if (initialPointsRef.current.length) {
         const first = initialPointsRef.current[0];
@@ -144,21 +144,21 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
   const geometry = polygon ? JSON.stringify(polygon) : "";
 
   return <div className="card" style={{padding:0,overflow:"hidden"}}>
-    <div style={{padding:"18px 20px",display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",borderBottom:"1px solid var(--line)"}}>
-      <div><h2 style={{margin:0}}>{unit.name}</h2><div className="muted" style={{fontSize:13,marginTop:4}}>{unit.farm.name} · click the map to place boundary vertices</div></div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+    <div style={{padding:"16px 20px",display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap",borderBottom:"1px solid var(--line)"}}>
+      <div><h2>{unit.name}</h2><div className="card-sub">{unit.farm.name} · Draw boundary, then click the map to add corner points</div></div>
+      <div className="inline-actions">
         <button type="button" className="button secondary small" onClick={() => setEditing((value)=>!value)}>{editing ? "Stop drawing" : "Draw boundary"}</button>
         <button type="button" className="button secondary small" onClick={() => setPoints((current)=>current.slice(0,-1))} disabled={!points.length}><Undo2 size={15}/> Undo</button>
         <button type="button" className="button secondary small" onClick={() => setPoints([])} disabled={!points.length}><Trash2 size={15}/> Clear</button>
       </div>
     </div>
     <div ref={container} style={{height:520,width:"100%"}}/>
-    <ActionForm action={saveUnitGeometryAction} reset={false} success="Boundary saved" style={{padding:16,display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+    <ActionForm action={saveUnitGeometryAction} reset={false} success="Boundary saved" style={{padding:"14px 20px",display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
       <input type="hidden" name="unitId" value={unit.id}/>
       <input type="hidden" name="geometryGeoJson" value={geometry}/>
       <input type="hidden" name="areaHa" value={areaHa ? areaHa.toFixed(4) : ""}/>
-      <div className="muted" style={{fontSize:13}}>{points.length} vertices {polygon ? "· " + areaHa.toFixed(2) + " ha mapped" : "· add at least 3 points"}</div>
-      <button className="button" disabled={!polygon}><Save size={16}/> Save field boundary</button>
+      <div className="muted small-text">{points.length} {points.length === 1 ? "point" : "points"} {polygon ? "· " + areaHa.toFixed(2) + " ha mapped" : "· add at least 3 points"}</div>
+      <button className="button" disabled={!polygon}><Save size={16}/> Save boundary</button>
     </ActionForm>
   </div>;
 }

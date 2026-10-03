@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCheck } from "lucide-react";
 import { ActionForm } from "@/components/action-form";
 import { recordAttendanceAction } from "@/app/people-actions";
+import { humanize } from "@/lib/utils";
 
 type Worker = { id: string; name: string; jobTitle: string | null; payBasis: string; farmId: string | null; pieceUnit: string | null };
 
@@ -18,7 +18,7 @@ export function AttendanceRegister({ workers, farms, cycles, today }: {
   const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   return <ActionForm action={recordAttendanceAction} className="form-card" reset={false}>
-    <div className="card-head"><div><h3>Daily attendance</h3><div className="muted small-text" style={{ marginTop: 4 }}>Tick everyone who worked. Full day = 8 hours; enter 4 for a half day. Pay is calculated from each worker&apos;s rate.</div></div><CheckCheck size={19} /></div>
+    <div className="card-head"><div><h2>Daily attendance</h2><div className="card-sub">Tick everyone who worked. Full day = 8 hours, half day = 4. Pay comes from each worker&apos;s rate.</div></div></div>
     <div className="form-grid">
       <div className="field"><label>Date</label><input name="workDate" type="date" defaultValue={today} required /></div>
       <div className="field"><label>Farm</label><select name="farmId" value={farmId} onChange={e => setFarmId(e.target.value)}><option value="">Each worker&apos;s own farm</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
@@ -30,16 +30,16 @@ export function AttendanceRegister({ workers, farms, cycles, today }: {
       <input placeholder="Find worker" value={query} onChange={e => setQuery(e.target.value)} style={{ maxWidth: 220 }} />
       <button type="button" className="button secondary small" onClick={() => setSelected(new Set(visible.map(w => w.id)))}>Tick all ({visible.length})</button>
       <button type="button" className="button secondary small" onClick={() => setSelected(new Set())}>Clear</button>
-      <span className="status">{selected.size} present</span>
+      <span className={`status ${selected.size ? "" : "neutral"}`}>{selected.size} present</span>
     </div>
     <div className="attendance-list">
       {visible.map(w => <label key={w.id} className="attendance-row">
         <input type="checkbox" name="present" value={w.id} checked={selected.has(w.id)} onChange={() => toggle(w.id)} />
-        <span><b>{w.name}</b><span className="sub" style={{ display: "block" }}>{w.jobTitle || ""} · {w.payBasis.replace("_", " ").toLowerCase()}</span></span>
+        <span><b>{w.name}</b><span className="sub" style={{ display: "block" }}>{[w.jobTitle, humanize(w.payBasis)].filter(Boolean).join(" · ")}</span></span>
         <input type="number" name={`hours_${w.id}`} aria-label={`Hours for ${w.name}`} defaultValue={8} min={0.5} max={24} step={0.5} inputMode="decimal" title="Hours" />
         {w.payBasis === "PIECE_RATE" ? <input className="pieces" type="number" name={`pieces_${w.id}`} aria-label={`${w.pieceUnit || "Pieces"} for ${w.name}`} placeholder={w.pieceUnit || "pieces"} min={0} step="any" inputMode="decimal" /> : <span />}
       </label>)}
-      {!visible.length ? <p className="muted">No active workers match. Add workers below first.</p> : null}
+      {!visible.length ? <p className="muted">No active workers match this farm or search.</p> : null}
     </div>
     <div className="form-actions"><button className="button" disabled={!selected.size}>Save attendance for {selected.size} worker{selected.size === 1 ? "" : "s"}</button></div>
   </ActionForm>;

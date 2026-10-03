@@ -12,11 +12,19 @@ import { db } from "@/lib/db";
 import { invoiceBalance, purchaseOrderTotals } from "@/lib/ledger";
 import { revenueTypes } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, safeDate } from "@/lib/utils";
+import { formatMoney, humanize, safeDate } from "@/lib/utils";
 
 export const metadata = { title: "Expenses & Income" };
 
 const periods = [["month", "This month"], ["quarter", "Last 3 months"], ["year", "This year"], ["all", "All time"]] as const;
+
+function expenseTone(status: string) {
+  if (status === "SUBMITTED") return "warn";
+  if (status === "APPROVED") return "info";
+  if (status === "DRAFT") return "neutral";
+  if (status === "REJECTED" || status === "VOID") return "danger";
+  return "";
+}
 
 function periodStart(period: string) {
   const now = new Date();
@@ -56,15 +64,15 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const tabLink = (t: string) => `/finance?period=${period}&tab=${t}`;
 
   return <>
-    <PageHeader eyebrow="Money" title="Expenses & income" description="Capture spending at source, approve and pay it, and link everything to the farm and production cycle it belongs to." action={<div className="inline-actions">{periods.map(([k, l]) => <Link key={k} href={`/finance?period=${k}&tab=${tab}`} className={`button small ${period === k ? "" : "secondary"}`}>{l}</Link>)}</div>} />
+    <PageHeader eyebrow="Money" title="Expenses & income" description="Capture spending at source, approve and pay it, and link everything to the farm and production cycle it belongs to." action={<nav className="segmented" aria-label="Period">{periods.map(([k, l]) => <Link key={k} href={`/finance?period=${k}&tab=${tab}`} className={period === k ? "active" : ""}>{l}</Link>)}</nav>} />
     <section className="metrics">
-      <MetricCard label="Income" value={money(income)} hint={periodLabel} icon={<CircleDollarSign size={18} />} />
-      <MetricCard label="Spending" value={money(spent)} hint={`Approved + paid, ${periodLabel}`} icon={<WalletCards size={18} />} />
-      <MetricCard label="Profit / loss" value={money(income - spent)} hint={income ? `${((income - spent) / income * 100).toFixed(0)}% margin` : periodLabel} icon={<Receipt size={18} />} />
-      <MetricCard label="Owed to you / by you" value={money(receivable)} hint={`You owe ${money(payable)}`} icon={<HandCoins size={18} />} />
+      <MetricCard label="Income" value={money(income)} hint={periodLabel} icon={<CircleDollarSign size={16} />} />
+      <MetricCard label="Spending" value={money(spent)} hint={`Approved + paid, ${periodLabel}`} icon={<WalletCards size={16} />} />
+      <MetricCard label="Profit / loss" value={money(income - spent)} hint={income ? `${((income - spent) / income * 100).toFixed(0)}% margin` : periodLabel} icon={<Receipt size={16} />} />
+      <MetricCard label="Owed to you / by you" value={money(receivable)} hint={`You owe ${money(payable)}`} icon={<HandCoins size={16} />} />
     </section>
 
-    {canManage ? <div className="grid-2">
+    {canManage ? <div className="drawers">
       <FormDetails title="Record expense" hint="Fuel, feed, transport, repairs, casual labour paid in cash…">
         <ActionForm action={createExpenseAction} success="Expense recorded">
           <div className="form-grid two">
@@ -103,16 +111,16 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
     {tab === "approvals" ? (pending.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th className="text-right">Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>{pending.map(e => <tr key={e.id}>
       <td>{safeDate(e.incurredAt)}</td><td><b>{e.description}</b><div className="sub">{e.category}{e.vendor ? ` · ${e.vendor}` : ""}</div></td><td>{e.farm?.name || "Organization"}<div className="sub">{e.cycle?.name || ""}</div></td><td className="text-right">{money(e.amount)}</td>
-      <td><span className={`status ${e.status === "APPROVED" ? "info" : "warn"}`}>{e.status === "APPROVED" ? "approved, unpaid" : e.status.toLowerCase()}</span></td>
+      <td><span className={`status ${e.status === "APPROVED" ? "info" : e.status === "DRAFT" ? "neutral" : "warn"}`}>{e.status === "APPROVED" ? "Approved, unpaid" : humanize(e.status)}</span></td>
       <td>{canManage ? <div className="inline-actions">{e.status === "APPROVED" ? <ActionForm action={updateExpenseStatusAction}><input type="hidden" name="id" value={e.id} /><input type="hidden" name="status" value="PAID" /><select name="accountId" defaultValue="" aria-label="Paid from"><option value="">Paid from…</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><button className="button small">Mark paid</button></ActionForm> : <>
         <ActionForm action={updateExpenseStatusAction}><input type="hidden" name="id" value={e.id} /><input type="hidden" name="status" value="APPROVED" /><button className="button small">Approve</button></ActionForm>
         <ActionForm action={updateExpenseStatusAction} confirm="Reject this expense?"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="status" value="REJECTED" /><button className="button secondary small">Reject</button></ActionForm>
       </>}</div> : null}</td>
     </tr>)}</tbody></table></div> : <div className="card"><EmptyState title="Nothing waiting" text="Submitted expenses and approved bills awaiting payment show here." /></div>)
-      : tab === "income" ? (revenues.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th>Type</th><th>From</th><th className="text-right">Amount</th></tr></thead><tbody>{revenues.map(r => <tr key={r.id}><td>{safeDate(r.occurredAt)}</td><td><b>{r.invoiceId ? <Link className="link" href={`/sales/invoices/${r.invoiceId}`}>{r.description}</Link> : r.description}</b><div className="sub">{r.reference || ""}</div></td><td>{r.farm?.name || "Organization"}<div className="sub">{r.cycle?.name || ""}</div></td><td>{r.type.replaceAll("_", " ").toLowerCase()}</td><td>{r.customer || "—"}</td><td className="text-right">{money(r.amount)}</td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No income in this period" text="Sales invoices and other income will appear here." /></div>)
+      : tab === "income" ? (revenues.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th>Type</th><th>From</th><th className="text-right">Amount</th></tr></thead><tbody>{revenues.map(r => <tr key={r.id}><td>{safeDate(r.occurredAt)}</td><td><b>{r.invoiceId ? <Link className="link" href={`/sales/invoices/${r.invoiceId}`}>{r.description}</Link> : r.description}</b><div className="sub">{r.reference || ""}</div></td><td>{r.farm?.name || "Organization"}<div className="sub">{r.cycle?.name || ""}</div></td><td>{humanize(r.type)}</td><td>{r.customer || "—"}</td><td className="text-right">{money(r.amount)}</td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No income in this period" text="Sales invoices and other income will appear here." /></div>)
         : <div className="grid-main-side">
-          {expenses.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th className="text-right">Amount</th><th>Status</th></tr></thead><tbody>{expenses.map(e => <tr key={e.id}><td>{safeDate(e.incurredAt)}</td><td><b>{e.description}</b><div className="sub">{e.category}{e.account ? ` · from ${e.account.name}` : ""}</div></td><td>{e.farm?.name || "Organization"}<div className="sub">{e.cycle?.name || ""}</div></td><td className="text-right">{money(e.amount)}</td><td><span className={`status ${["DRAFT", "SUBMITTED"].includes(e.status) ? "warn" : ["REJECTED", "VOID"].includes(e.status) ? "neutral" : ""}`}>{e.status.toLowerCase()}</span></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No expenses in this period" text="Record farm spending so you can see your true costs." /></div>}
-          <div className="card"><div className="card-head"><h2>Spending by category</h2></div>{[...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, value]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(value)}</b></div><div className="progress"><span style={{ width: `${spent ? Math.max(4, value / spent * 100) : 0}%` }} /></div></div>)}{!byCategory.size && <p className="muted">No approved spending yet.</p>}</div>
+          {expenses.length ? <div className="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Farm / cycle</th><th className="text-right">Amount</th><th>Status</th></tr></thead><tbody>{expenses.map(e => <tr key={e.id}><td>{safeDate(e.incurredAt)}</td><td><b>{e.description}</b><div className="sub">{e.category}{e.account ? ` · from ${e.account.name}` : ""}</div></td><td>{e.farm?.name || "Organization"}<div className="sub">{e.cycle?.name || ""}</div></td><td className="text-right">{money(e.amount)}</td><td><span className={`status ${expenseTone(e.status)}`}>{humanize(e.status)}</span></td></tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No expenses in this period" text="Record farm spending so you can see your true costs." /></div>}
+          <div className="card"><div className="card-head"><div><h2>Spending by category</h2><div className="card-sub">Approved and paid, {periodLabel}</div></div></div>{[...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, value]) => <div className="progress-row" key={name}><div className="progress-label"><span>{name}</span><b>{money(value)}</b></div><div className="progress"><span style={{ width: `${spent ? Math.max(4, value / spent * 100) : 0}%` }} /></div></div>)}{!byCategory.size && <p className="muted">No approved spending in this period.</p>}</div>
         </div>}
   </>;
 }

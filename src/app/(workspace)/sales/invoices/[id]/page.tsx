@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { invoiceBalance, invoiceDisplayStatus } from "@/lib/ledger";
 import { invoiceStatusClass, label, paymentMethods } from "@/lib/options";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, formatNumber, safeDate, toDateInput, whatsappLink } from "@/lib/utils";
+import { formatMoney, formatNumber, humanize, safeDate, toDateInput, whatsappLink } from "@/lib/utils";
 
 export const metadata = { title: "Invoice" };
 
@@ -45,15 +45,15 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
       <a className="button secondary small" href={whatsappLink(invoice.customer.phone, shareText)} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Send on WhatsApp</a>
       <Link href={`/sales/customers/${invoice.customerId}`} className="button secondary small">Customer statement</Link>
     </div>
-    {created ? <div className="success-banner no-print" style={{ marginBottom: 16 }}>Saved. {balance > 0 ? "Share the invoice with the customer, or record a payment below." : "The invoice is fully paid. Share the receipt with the customer."}</div> : null}
+    {created ? <div className="success-banner no-print">Saved. {balance > 0 ? "Share the invoice with the customer, or record a payment below." : "The invoice is fully paid. Share the receipt with the customer."}</div> : null}
 
     <article className="doc">
       <div className="doc-head">
         <div><h1>{ctx.tenant.name}</h1><div className="muted" style={{ marginTop: 6 }}>{farm ? [farm.name, farm.address, farm.state, farm.country].filter(Boolean).join(", ") : ""}</div></div>
-        <div style={{ textAlign: "right" }}>
+        <div className="text-right">
           <div className="eyebrow">{invoice.status === "PAID" ? "Invoice & receipt" : "Invoice"}</div>
           <h2 style={{ margin: "6px 0" }}>{invoice.invoiceNo}</h2>
-          {invoice.status === "PAID" ? <span className="stamp paid">PAID</span> : invoice.status === "VOID" ? <span className="stamp void">VOID</span> : <span className={`status ${invoiceStatusClass(status)}`}>{status.replaceAll("_", " ").toLowerCase()}</span>}
+          {invoice.status === "PAID" ? <span className="stamp paid">PAID</span> : invoice.status === "VOID" ? <span className="stamp void">VOID</span> : <span className={`status ${invoiceStatusClass(status)}`}>{humanize(status)}</span>}
         </div>
       </div>
       <div className="doc-meta">
@@ -77,9 +77,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
       <p className="muted small-text" style={{ marginTop: 26 }}>Thank you for your business.</p>
     </article>
 
-    {open && canCollect ? <div className="grid-2 no-print" style={{ marginTop: 20 }}>
-      <ActionForm action={recordInvoicePaymentAction} className="form-card" style={{ margin: 0 }}>
-        <div className="card-head"><h3>Record payment</h3></div>
+    {open && canCollect ? <div className="grid-2 no-print">
+      <ActionForm action={recordInvoicePaymentAction} className="form-card" success="Payment saved">
+        <div className="card-head"><div><h2>Record payment</h2><div className="card-sub">Balance due {money(balance)}</div></div></div>
         <input type="hidden" name="invoiceId" value={invoice.id} />
         <div className="form-grid two">
           <div className="field"><label>Amount</label><input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" max={balance} defaultValue={balance.toFixed(2)} required /></div>
@@ -90,9 +90,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         </div>
         <div className="form-actions"><button className="button">Save payment</button></div>
       </ActionForm>
-      {ctx.can("sales.manage") && Number(invoice.amountPaid) === 0 ? <ActionForm action={voidInvoiceAction} className="form-card" style={{ margin: 0 }} confirm="Void this invoice? Its revenue will be removed from your reports.">
-        <div className="card-head"><h3>Void invoice</h3></div>
-        <p className="muted small-text">Use this if the invoice was issued in error. Delivered stock is not returned automatically; post a stock return if goods came back.</p>
+      {ctx.can("sales.manage") && Number(invoice.amountPaid) === 0 ? <ActionForm action={voidInvoiceAction} className="form-card" confirm="Void this invoice? Its revenue will be removed from your reports." success="Invoice voided">
+        <div className="card-head"><div><h2>Void invoice</h2><div className="card-sub">Only for invoices issued in error. Stock is not returned automatically; post a stock return if goods came back.</div></div></div>
         <input type="hidden" name="id" value={invoice.id} />
         <div className="field"><label>Reason</label><input name="reason" required placeholder="Wrong customer / duplicate / price error" /></div>
         <div className="form-actions"><button className="button danger">Void invoice</button></div>

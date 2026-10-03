@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { customerBalances } from "@/lib/ledger";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, formatNumber, safeDate } from "@/lib/utils";
+import { formatMoney, formatNumber, humanize, safeDate } from "@/lib/utils";
 
 export const metadata = { title: "Sales" };
 
@@ -37,14 +37,14 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   return <>
     <PageHeader eyebrow="Sell & get paid" title="Sales" description="Customers, orders, deliveries and money owed to the farm." action={canManage ? <div className="inline-actions"><Link className="button" href="/sales/quick"><Zap size={16} /> Quick sale</Link><Link className="button secondary" href="/sales/invoices">Invoices</Link></div> : undefined} />
     <section className="metrics">
-      <MetricCard label="Owed to you" value={money(receivable)} hint="Unpaid invoices" icon={<HandCoins size={18} />} />
-      <MetricCard label="Overdue" value={money(overdue)} hint="Past due date" icon={<AlarmClock size={18} />} />
-      <MetricCard label="Collected this month" value={money(collected._sum.amount || 0)} hint="Payments received" icon={<CircleDollarSign size={18} />} />
-      <MetricCard label="Orders to deliver" value={String(open.length)} hint={`${customers.length} active customers`} icon={<ShoppingBag size={18} />} />
+      <MetricCard label="Owed to you" value={money(receivable)} hint="Unpaid invoices" icon={<HandCoins size={16} />} />
+      <MetricCard label="Overdue" value={money(overdue)} hint="Past due date" icon={<AlarmClock size={16} />} />
+      <MetricCard label="Collected this month" value={money(collected._sum.amount || 0)} hint="Payments received" icon={<CircleDollarSign size={16} />} />
+      <MetricCard label="Orders to deliver" value={String(open.length)} hint={`${customers.length} active customers`} icon={<ShoppingBag size={16} />} />
     </section>
 
-    {canManage ? <div className="grid-2">
-      <FormDetails title="New sales order" hint="For orders you will deliver later. For immediate sales use Quick sale.">
+    {canManage ? <div className="drawers">
+      <FormDetails title="New sales order" hint="For orders you deliver later. For sales on the spot, use Quick sale." open={!orders.length && !!customers.length}>
         <ActionForm action={createSalesOrderAction} success="Order created">
           <div className="form-grid two">
             <div className="field"><label>Customer</label><select name="customerId" required defaultValue=""><option value="" disabled>Select customer</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
@@ -62,8 +62,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="form-actions"><button className="button" disabled={!customers.length}>Create order</button></div>
         </ActionForm>
       </FormDetails>
-      <FormDetails title="Add customer" hint="Buyers, off-takers, market traders and processors.">
-        <ActionForm action={saveCustomerAction}>
+      <FormDetails title="Add customer" hint="Buyers, off-takers, market traders and processors." open={!customers.length}>
+        <ActionForm action={saveCustomerAction} success="Customer added">
           <div className="form-grid two">
             <div className="field span-2"><label>Name</label><input name="name" required /></div>
             <div className="field"><label>Phone / WhatsApp</label><input name="phone" type="tel" inputMode="tel" /></div>
@@ -93,7 +93,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <td>{first?.product?.name || first?.description || "—"}<div className="sub">{first ? `${formatNumber(first.quantity, 3)} ${first.unit}` : ""}{o.items.length > 1 ? ` · +${o.items.length - 1} more` : ""}</div></td>
           <td>{o.farm?.name || "Organization"}<div className="sub">{o.cycle?.name || ""}</div></td>
           <td className="text-right">{money(total)}</td>
-          <td><span className={`status ${o.status === "CANCELLED" ? "neutral" : ["DRAFT", "CONFIRMED"].includes(o.status) ? "info" : ""}`}>{o.status === "INVOICED" ? "Delivered" : o.status.toLowerCase()}</span></td>
+          <td><span className={`status ${["CANCELLED", "DRAFT"].includes(o.status) ? "neutral" : o.status === "CONFIRMED" ? "info" : ""}`}>{o.status === "INVOICED" ? "Delivered" : humanize(o.status)}</span></td>
           <td><div className="inline-actions">
             {o.invoice ? <Link className="button secondary small" href={`/sales/invoices/${o.invoice.id}`}>{o.invoice.invoiceNo}</Link> : null}
             {canManage && ["DRAFT", "CONFIRMED"].includes(o.status) ? <>

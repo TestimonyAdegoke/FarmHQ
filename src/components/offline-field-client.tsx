@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Bird, CheckCircle2, CloudOff, LocateFixed, RefreshCw, Save, Trash2, UserCheck, Wifi } from "lucide-react";
+import { CheckCircle2, CloudOff, LocateFixed, RefreshCw, Save, Trash2, Wifi } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { humanize } from "@/lib/utils";
 
 type Farm = { id:string; name:string };
 type Unit = { id:string; name:string; farmId:string };
@@ -279,13 +281,13 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities, po
     },()=>setMessage("Unable to acquire GPS. You can still select the field manually."),{enableHighAccuracy:true,timeout:12000,maximumAge:30000});
   }
 
-  return <div style={{display:"grid",gap:20}}>
-    <div className="card"><div className="card-head"><div><h2>Sync status</h2><div className="muted" style={{fontSize:13,marginTop:4}}>{message}</div></div>{online?<Wifi size={20} color="var(--brand)"/>:<CloudOff size={20}/>}</div><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><span className={"status "+(queueCount?"warn":"")}>{queueCount} queued</span><span className="status neutral">{online?"Online":"Offline"}</span><button className="button secondary small" type="button" onClick={()=>void syncQueued()}><RefreshCw size={15}/> Sync now</button></div></div>
+  return <div className="stack">
+    <div className="card"><div className="card-head"><div><h2>Sync status</h2><div className="card-sub" role="status" aria-live="polite">{message}</div></div>{online?<Wifi size={18} color="var(--brand)" aria-label="Online"/>:<CloudOff size={18} color="var(--warning)" aria-label="Offline"/>}</div><div className="inline-actions"><span className={"status "+(online?"":"warn")}>{online?"Online":"Offline"}</span><span className={"status "+(queueCount?"warn":"neutral")}>{queueCount?queueCount+" waiting to sync":"Nothing waiting"}</span><button className="button secondary small" type="button" onClick={()=>void syncQueued()}><RefreshCw size={15}/> Sync now</button></div></div>
 
-    {failed.length ? <div className="card"><div className="card-head"><div><h2>Needs attention</h2><div className="muted small-text" style={{marginTop:4}}>The server could not accept these. Fix the cause (for example a deleted cycle), re-enter, then discard.</div></div></div><div style={{display:"grid",gap:8}}>{failed.map(item=><div className="alert" key={item.clientMutationId}><div style={{flex:1}}><b>{typeLabels[item.type]}</b><small>{item.error}{item.queuedAt?" · saved "+new Date(item.queuedAt).toLocaleString():""}</small></div><button type="button" className="button secondary small" onClick={()=>void discard(item.clientMutationId)}><Trash2 size={15}/> Discard</button></div>)}</div></div> : null}
+    {failed.length ? <div className="card"><div className="card-head"><div><h2>Needs attention</h2><div className="card-sub">The server could not accept these. Fix the cause (for example a deleted cycle), re-enter, then discard.</div></div></div><div className="alert-list">{failed.map(item=><div className="alert" key={item.clientMutationId}><div style={{flex:1}}><b>{typeLabels[item.type]}</b><small>{item.error}{item.queuedAt?" · saved "+new Date(item.queuedAt).toLocaleString():""}</small></div><button type="button" className="button secondary small" onClick={()=>void discard(item.clientMutationId)}><Trash2 size={15}/> Discard</button></div>)}</div></div> : null}
 
     {canAttendance && workers.length ? <form className="form-card" onSubmit={submitAttendance}>
-      <div className="card-head"><div><h3>Daily attendance</h3><div className="muted small-text" style={{marginTop:4}}>Works offline. Entries by supervisors go to a manager for approval.</div></div><UserCheck size={19}/></div>
+      <div className="card-head"><div><h2>Daily attendance</h2><div className="card-sub">Works offline. Entries by supervisors go to a manager for approval.</div></div></div>
       <div className="form-grid two">
         <div className="field"><label>Date</label><input name="workDate" type="date" defaultValue={localDate()} required/></div>
         <div className="field"><label>Work done</label><input name="activity" required placeholder="Weeding / harvesting / feeding"/></div>
@@ -300,7 +302,7 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities, po
     </form> : null}
 
     {canPoultry && poultryCycles.length ? <form className="form-card" onSubmit={submitPoultry}>
-      <div className="card-head"><div><h3>Poultry daily record</h3><div className="muted small-text" style={{marginTop:4}}>Deaths, feed, water and eggs for one flock. Re-entering the same day replaces it.</div></div><Bird size={19}/></div>
+      <div className="card-head"><div><h2>Poultry daily record</h2><div className="card-sub">Deaths, feed, water and eggs for one flock. Re-entering the same day replaces it.</div></div></div>
       <div className="form-grid two">
         <div className="field"><label>Flock / batch</label><select name="cycleId" required defaultValue={poultryCycles.length===1?poultryCycles[0].id:""}>{poultryCycles.length>1?<option value="" disabled>Select flock</option>:null}{poultryCycles.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div className="field"><label>Date</label><input name="recordDate" type="date" defaultValue={localDate()} required/></div>
@@ -316,24 +318,24 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities, po
     </form> : null}
 
     <form className="form-card" onSubmit={submitObservation}>
-      <div className="card-head"><div><h3>Offline scouting</h3><div className="muted" style={{fontSize:13,marginTop:4}}>The form saves to IndexedDB first. Network delivery is secondary.</div></div><Save size={19}/></div>
+      <div className="card-head"><div><h2>Scouting observation</h2><div className="card-sub">Saved on this device first, then sent when you have signal.</div></div></div>
       <div className="form-grid two">
         <div className="field"><label>Farm</label><select value={farmId} onChange={event=>{setFarmId(event.target.value);setUnitId("");}} required>{farms.map(farm=><option key={farm.id} value={farm.id}>{farm.name}</option>)}</select></div>
         <div className="field"><label>Field / unit</label><select value={unitId} onChange={event=>setUnitId(event.target.value)}><option value="">Farm-wide / unknown</option>{availableUnits.map(unit=><option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></div>
         <div className="field"><label>Cycle</label><select name="cycleId" defaultValue=""><option value="">Not linked</option>{availableCycles.map(cycle=><option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}</select></div>
-        <div className="field"><label>Severity</label><select name="severity" defaultValue="MEDIUM"><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
+        <div className="field"><label>Severity</label><select name="severity" defaultValue="MEDIUM">{["LOW","MEDIUM","HIGH","CRITICAL"].map(v=><option key={v} value={v}>{humanize(v)}</option>)}</select></div>
         <div className="field"><label>Category</label><input name="category" required placeholder="Pest / disease / irrigation"/></div>
         <div className="field"><label>Affected area (ha)</label><input name="affectedAreaHa" type="number" min="0" step="0.001"/></div>
         <div className="field span-2"><label>Observation</label><input name="issue" required placeholder="Describe what you observed"/></div>
         <div className="field span-2"><label>Recommendation</label><input name="recommendation"/></div>
       </div>
       <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:14}}><button className="button secondary" type="button" onClick={captureGps}><LocateFixed size={16}/> {location?"Refresh GPS":"Capture GPS"}</button><button className="button"><Save size={16}/> Save observation</button></div>
-      {location?<div className="muted" style={{fontSize:12,marginTop:10}}>GPS: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</div>:null}
+      {location?<div className="sub" style={{marginTop:10}}>GPS:{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</div>:null}
     </form>
 
     <div className="grid-2">
-      <div className="card"><div className="card-head"><h2>Open tasks</h2></div>{tasks.length?<div style={{display:"grid",gap:8}}>{tasks.map(task=><div className="alert" key={task.id}><div style={{flex:1}}><b>{task.title}</b><small>{task.status.replaceAll("_"," ")}</small></div><button className="button secondary small" type="button" onClick={()=>void queueMutation("TASK_STATUS",{taskId:task.id,status:"DONE"})}><CheckCircle2 size={15}/> Complete</button></div>)}</div>:<div className="empty"><strong>No open tasks</strong></div>}</div>
-      <div className="card"><div className="card-head"><h2>Field activities</h2></div>{activities.length?<div style={{display:"grid",gap:8}}>{activities.map(activity=><div className="alert" key={activity.id}><div style={{flex:1}}><b>{activity.title}</b><small>{activity.status.replaceAll("_"," ")}</small></div><button className="button secondary small" type="button" onClick={()=>void queueMutation("CROP_ACTIVITY_STATUS",{activityId:activity.id,status:"COMPLETED"})}><CheckCircle2 size={15}/> Complete</button></div>)}</div>:<div className="empty"><strong>No open activities</strong></div>}</div>
+      <div className="card"><div className="card-head"><h2>Open tasks</h2></div>{tasks.length?<div className="alert-list">{tasks.map(task=><div className="alert" key={task.id}><div style={{flex:1}}><b>{task.title}</b><small>{humanize(task.status)}</small></div><button className="button secondary small" type="button" onClick={()=>void queueMutation("TASK_STATUS",{taskId:task.id,status:"DONE"})}><CheckCircle2 size={15}/> Complete</button></div>)}</div>:<EmptyState title="No open tasks" text="Tasks assigned on this farm will show here." icon={<CheckCircle2 size={20}/>}/>}</div>
+      <div className="card"><div className="card-head"><h2>Field activities</h2></div>{activities.length?<div className="alert-list">{activities.map(activity=><div className="alert" key={activity.id}><div style={{flex:1}}><b>{activity.title}</b><small>{humanize(activity.status)}</small></div><button className="button secondary small" type="button" onClick={()=>void queueMutation("CROP_ACTIVITY_STATUS",{activityId:activity.id,status:"COMPLETED"})}><CheckCircle2 size={15}/> Complete</button></div>)}</div>:<EmptyState title="No open activities" text="Planned crop work will show here." icon={<CheckCircle2 size={20}/>}/>}</div>
     </div>
   </div>;
 }

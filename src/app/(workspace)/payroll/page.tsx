@@ -3,12 +3,13 @@ import { Banknote, CalendarRange, HandCoins, Users } from "lucide-react";
 import { createPayRunAction } from "@/app/people-actions";
 import { ActionForm } from "@/components/action-form";
 import { EmptyState } from "@/components/empty-state";
+import { FormDetails } from "@/components/form-details";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { labourCost } from "@/lib/ledger";
 import { tenantContext } from "@/lib/tenant";
-import { formatMoney, safeDate, toDateInput } from "@/lib/utils";
+import { formatMoney, humanize, safeDate, toDateInput } from "@/lib/utils";
 
 export const metadata = { title: "Payroll" };
 
@@ -29,30 +30,31 @@ export default async function PayrollPage() {
   return <>
     <PageHeader eyebrow="People" title="Payroll" description="Turn approved attendance and salaries into a pay run, recover wage advances, approve it and record payment." />
     <section className="metrics">
-      <MetricCard label="Wages earned, not yet paid" value={money(owed)} hint={`${new Set(unpaid.map(t => t.workerId)).size} workers with approved work`} icon={<HandCoins size={18} />} />
-      <MetricCard label="Advances to recover" value={money(advances._sum.amount || 0)} hint="Deducted in the next pay run" icon={<Banknote size={18} />} />
-      <MetricCard label="Pay runs in progress" value={String(draft.length)} hint="Draft or approved, not yet paid" icon={<CalendarRange size={18} />} />
-      <MetricCard label="Paid this year" value={money(paidThisYear)} hint="Net wages paid" icon={<Users size={18} />} />
+      <MetricCard label="Wages earned, not yet paid" value={money(owed)} hint={`${new Set(unpaid.map(t => t.workerId)).size} workers with approved work`} icon={<HandCoins size={16} />} />
+      <MetricCard label="Advances to recover" value={money(advances._sum.amount || 0)} hint="Deducted in the next pay run" icon={<Banknote size={16} />} />
+      <MetricCard label="Pay runs in progress" value={String(draft.length)} hint="Draft or approved, not yet paid" icon={<CalendarRange size={16} />} />
+      <MetricCard label="Paid this year" value={money(paidThisYear)} hint="Net wages paid" icon={<Users size={16} />} />
     </section>
 
-    {ctx.can("workforce.manage") ? <ActionForm action={createPayRunAction} className="form-card" reset={false}>
-      <div className="card-head"><div><h3>Start a pay run</h3><div className="muted small-text" style={{ marginTop: 4 }}>Includes approved, unpaid work in the period plus monthly salaries (pro-rated for part months). Outstanding advances are deducted.</div></div></div>
-      <div className="form-grid">
-        <div className="field"><label>Period start</label><input name="periodStart" type="date" required defaultValue={toDateInput(new Date(now.getFullYear(), now.getMonth(), 1))} /></div>
-        <div className="field"><label>Period end</label><input name="periodEnd" type="date" required defaultValue={toDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0))} /></div>
-        <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">All farms</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
-        <div className="field"><label>Notes</label><input name="notes" placeholder="e.g. October wages" /></div>
-      </div>
-      <div className="form-actions"><button className="button">Calculate pay run</button></div>
-    </ActionForm> : null}
+    {ctx.can("workforce.manage") ? <FormDetails title="Start a pay run" hint="Approved unpaid work plus monthly salaries for the period, less outstanding advances." open={!runs.length}>
+      <ActionForm action={createPayRunAction} reset={false}>
+        <div className="form-grid">
+          <div className="field"><label>Period start</label><input name="periodStart" type="date" required defaultValue={toDateInput(new Date(now.getFullYear(), now.getMonth(), 1))} /></div>
+          <div className="field"><label>Period end</label><input name="periodEnd" type="date" required defaultValue={toDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0))} /></div>
+          <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">All farms</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+          <div className="field"><label>Notes</label><input name="notes" placeholder="e.g. October wages" /></div>
+        </div>
+        <div className="form-actions"><button className="button">Calculate pay run</button></div>
+      </ActionForm>
+    </FormDetails> : null}
 
-    {runs.length ? <div className="table-wrap"><table><thead><tr><th>Pay run</th><th>Period</th><th>Workers</th><th className="text-right">Gross</th><th className="text-right">Net pay</th><th>Status</th></tr></thead><tbody>{runs.map(r => <tr key={r.id}>
+    {runs.length ? <div className="table-wrap"><table><thead><tr><th>Pay run</th><th>Period</th><th className="text-right">Workers</th><th className="text-right">Gross</th><th className="text-right">Net pay</th><th>Status</th></tr></thead><tbody>{runs.map(r => <tr key={r.id}>
       <td><Link className="link" href={`/payroll/${r.id}`}>{r.runNo}</Link><div className="sub">{r.notes || ""}</div></td>
-      <td>{safeDate(r.periodStart)} – {safeDate(r.periodEnd)}</td>
-      <td>{r.lines.length}</td>
+      <td className="nowrap">{safeDate(r.periodStart)} – {safeDate(r.periodEnd)}</td>
+      <td className="text-right">{r.lines.length}</td>
       <td className="text-right">{money(r.lines.reduce((s, l) => s + Number(l.grossPay), 0))}</td>
       <td className="text-right"><b>{money(r.lines.reduce((s, l) => s + Number(l.netPay), 0))}</b></td>
-      <td><span className={`status ${r.status === "PAID" ? "" : r.status === "CANCELLED" ? "neutral" : r.status === "APPROVED" ? "info" : "warn"}`}>{r.status.toLowerCase()}</span></td>
+      <td><span className={`status ${r.status === "PAID" ? "" : r.status === "CANCELLED" ? "neutral" : r.status === "APPROVED" ? "info" : "warn"}`}>{humanize(r.status)}</span></td>
     </tr>)}</tbody></table></div> : <div className="card"><EmptyState title="No pay runs yet" text="Approve attendance in Workers & Attendance, then start your first pay run." /></div>}
   </>;
 }

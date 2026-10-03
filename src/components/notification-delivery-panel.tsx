@@ -1,8 +1,13 @@
 import { Play, RadioTower, Send, ToggleLeft } from "lucide-react";
 import { createNotificationEndpointAction, deliverNotificationsAction, toggleNotificationEndpointAction } from "@/app/v04-ops-actions";
 import { db } from "@/lib/db";
-import { safeDate } from "@/lib/utils";
+import { humanize, safeDate } from "@/lib/utils";
 import { ActionForm } from "@/components/action-form";
+import { EmptyState } from "@/components/empty-state";
+import { FormDetails } from "@/components/form-details";
+
+const severities = ["INFO", "WARNING", "CRITICAL"] as const;
+const deliveryTone = (status: string) => status === "FAILED" ? "danger" : status === "SENT" ? "" : "warn";
 
 export async function NotificationDeliveryPanel({ tenantId }:{tenantId:string}) {
   const [endpoints,deliveries] = await Promise.all([
@@ -15,28 +20,32 @@ export async function NotificationDeliveryPanel({ tenantId }:{tenantId:string}) 
   const sent=deliveries.filter(item=>item.status==="SENT").length;
   const failed=deliveries.filter(item=>item.status==="FAILED").length;
 
-  return <div style={{display:"grid",gap:20,marginTop:20}}>
-    <div className="grid-2">
-      <ActionForm className="form-card" action={createNotificationEndpointAction} style={{margin:0}}>
-        <div className="card-head"><div><h3>Add webhook endpoint</h3><div className="muted" style={{fontSize:13,marginTop:4}}>HTTPS endpoints receive eligible FarmHQ notification payloads.</div></div><RadioTower size={19}/></div>
-        <div className="form-grid two">
-          <div className="field"><label>Name</label><input name="name" required placeholder="Operations webhook"/></div>
-          <div className="field"><label>Minimum severity</label><select name="minimumSeverity" defaultValue="WARNING"><option>INFO</option><option>WARNING</option><option>CRITICAL</option></select></div>
-          <div className="field span-2"><label>HTTPS URL</label><input name="url" required type="url" placeholder="https://hooks.example.com/..."/></div>
+  return <>
+    <div className="grid-main-side">
+      <div className="stack">
+        <div className="card"><div className="card-head"><div><h2>Webhook endpoints</h2><div className="card-sub">HTTPS addresses that receive FarmHQ alerts.</div></div></div>
+          {endpoints.length?<div className="table-wrap"><table><thead><tr><th>Name</th><th>Minimum severity</th><th>Target</th><th>Status</th></tr></thead><tbody>{endpoints.map(endpoint=><tr key={endpoint.id}><td><b>{endpoint.name}</b></td><td>{humanize(endpoint.minimumSeverity)}</td><td><span className="sub">{endpoint.url}</span></td><td><ActionForm action={toggleNotificationEndpointAction}><input type="hidden" name="id" value={endpoint.id}/><button className="button secondary small"><ToggleLeft size={15}/> {endpoint.active?"Active":"Disabled"}</button></ActionForm></td></tr>)}</tbody></table></div>:<EmptyState title="No webhook endpoints" text="Add an endpoint to send alerts to another system." icon={<RadioTower size={20}/>}/>}
         </div>
-        <div className="form-actions"><button className="button"><Send size={16}/> Add endpoint</button></div>
-      </ActionForm>
+        <FormDetails title="Add webhook endpoint" hint="HTTPS endpoints receive alerts at or above the chosen severity." open={!endpoints.length}>
+          <ActionForm action={createNotificationEndpointAction} success="Endpoint added">
+            <div className="form-grid two">
+              <div className="field"><label>Name</label><input name="name" required placeholder="Operations webhook"/></div>
+              <div className="field"><label>Minimum severity</label><select name="minimumSeverity" defaultValue="WARNING">{severities.map(s=><option key={s} value={s}>{humanize(s)}</option>)}</select></div>
+              <div className="field span-2"><label>HTTPS URL</label><input name="url" required type="url" placeholder="https://hooks.example.com/..."/></div>
+            </div>
+            <div className="form-actions"><button className="button"><Send size={16}/> Add endpoint</button></div>
+          </ActionForm>
+        </FormDetails>
+      </div>
 
       <div className="card">
-        <div className="card-head"><div><h3>Delivery worker</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Webhook attempts are audited separately from in-app notification state.</div></div><Send size={19}/></div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}><span className="status">{sent} sent</span><span className={"status "+(failed?"warn":"neutral")}>{failed} failed</span><span className="status neutral">{endpoints.filter(item=>item.active).length} active endpoints</span></div>
-        <ActionForm action={deliverNotificationsAction}><button className="button"><Play size={16}/> Deliver pending notifications</button></ActionForm>
-        <div className="muted" style={{fontSize:12,marginTop:12}}>When NOTIFICATION_WEBHOOK_SECRET is configured, outgoing payloads include an HMAC-SHA256 signature header.</div>
+        <div className="card-head"><div><h2>Webhook delivery</h2><div className="card-sub">Delivery attempts are logged separately from in-app alerts.</div></div></div>
+        <dl className="kv"><dt>Sent</dt><dd>{sent}</dd><dt>Failed</dt><dd>{failed?<span className="status danger">{failed}</span>:0}</dd><dt>Active endpoints</dt><dd>{endpoints.filter(item=>item.active).length}</dd></dl>
+        <div className="form-actions"><ActionForm action={deliverNotificationsAction}><button className="button"><Play size={16}/> Deliver pending alerts</button></ActionForm></div>
+        <p className="sub">When NOTIFICATION_WEBHOOK_SECRET is set, outgoing payloads carry an HMAC-SHA256 signature header.</p>
       </div>
     </div>
 
-    {endpoints.length?<div className="card"><div className="card-head"><h2>Delivery endpoints</h2></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Minimum severity</th><th>Target</th><th>Status</th></tr></thead><tbody>{endpoints.map(endpoint=><tr key={endpoint.id}><td><b>{endpoint.name}</b></td><td>{endpoint.minimumSeverity}</td><td><span className="muted" style={{fontSize:12}}>{endpoint.url}</span></td><td><ActionForm action={toggleNotificationEndpointAction}><input type="hidden" name="id" value={endpoint.id}/><button className="button secondary small"><ToggleLeft size={15}/> {endpoint.active?"Active":"Disabled"}</button></ActionForm></td></tr>)}</tbody></table></div></div>:null}
-
-    {deliveries.length?<div className="card"><div className="card-head"><h2>Recent deliveries</h2></div><div className="table-wrap"><table><thead><tr><th>Notification</th><th>Endpoint</th><th>Status</th><th>Attempts</th><th>Last attempt</th><th>Result</th></tr></thead><tbody>{deliveries.map(delivery=>{const notification=notificationMap.get(delivery.notificationId);return <tr key={delivery.id}><td><b>{notification?.title||delivery.notificationId}</b><div className="muted" style={{fontSize:12}}>{notification?.severity||""}</div></td><td>{delivery.endpoint.name}</td><td><span className={"status "+(delivery.status==="FAILED"?"warn":"")}>{delivery.status}</span></td><td>{delivery.attempts}</td><td>{safeDate(delivery.lastAttemptAt)}</td><td>{delivery.responseCode?"HTTP "+String(delivery.responseCode):delivery.error||"—"}</td></tr>})}</tbody></table></div></div>:null}
-  </div>;
+    {deliveries.length?<div className="card"><div className="card-head"><h2>Recent deliveries</h2></div><div className="table-wrap"><table><thead><tr><th>Notification</th><th>Endpoint</th><th>Status</th><th className="text-right">Attempts</th><th>Last attempt</th><th>Result</th></tr></thead><tbody>{deliveries.map(delivery=>{const notification=notificationMap.get(delivery.notificationId);return <tr key={delivery.id}><td><b>{notification?.title||delivery.notificationId}</b><div className="sub">{humanize(notification?.severity)}</div></td><td>{delivery.endpoint.name}</td><td><span className={"status "+deliveryTone(delivery.status)}>{humanize(delivery.status)}</span></td><td className="text-right">{delivery.attempts}</td><td>{safeDate(delivery.lastAttemptAt)}</td><td>{delivery.responseCode?"HTTP "+String(delivery.responseCode):delivery.error||"—"}</td></tr>})}</tbody></table></div></div>:null}
+  </>;
 }
