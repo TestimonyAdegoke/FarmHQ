@@ -123,7 +123,6 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
   },[]);
 
   useEffect(()=>{
-    setOnline(navigator.onLine);
     void refreshQueue();
     if (navigator.onLine) void syncQueued();
     const handleOnline = () => { setOnline(true); void syncQueued(); };
