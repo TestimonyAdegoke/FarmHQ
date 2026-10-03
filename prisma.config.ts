@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma",
@@ -7,6 +7,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // prisma generate does not require a live database connection. Keep the
+    // config build-safe; runtime database access is enforced in src/lib/db.ts.
+    url: process.env.DATABASE_URL ?? "",
   },
 });
