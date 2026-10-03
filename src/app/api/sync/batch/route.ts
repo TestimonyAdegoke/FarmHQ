@@ -77,7 +77,7 @@ async function processMutation(tenantId: string, mutation: z.infer<typeof mutati
       where: { id: task.id },
       data: {
         status: payload.status,
-        completedAt: payload.status === TaskStatus.COMPLETED ? new Date() : null,
+        completedAt: payload.status === TaskStatus.DONE ? new Date() : null,
       },
     });
     return;
