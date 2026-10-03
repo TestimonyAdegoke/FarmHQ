@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, CloudOff, LocateFixed, RefreshCw, Save, Wifi } from "lucide-react";
 
 type Farm = { id:string; name:string };
