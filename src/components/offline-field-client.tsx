@@ -78,7 +78,18 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
   const [queueCount,setQueueCount] = useState(0);
   const [message,setMessage] = useState("Ready for field capture.");
   const [location,setLocation] = useState<{latitude:number;longitude:number}|null>(null);
-  const [online,setOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
+  const online = useSyncExternalStore(
+    (notify) => {
+      window.addEventListener("online", notify);
+      window.addEventListener("offline", notify);
+      return () => {
+        window.removeEventListener("online", notify);
+        window.removeEventListener("offline", notify);
+      };
+    },
+    () => navigator.onLine,
+    () => true,
+  );
 
   const availableUnits = useMemo(()=>units.filter(unit=>unit.farmId===farmId),[units,farmId]);
   const availableCycles = useMemo(()=>cycles.filter(cycle=>cycle.farmId===farmId),[cycles,farmId]);
@@ -91,11 +102,9 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
 
   const syncQueued = useCallback(async () => {
     if (!navigator.onLine) {
-      setOnline(false);
       setMessage("Offline. Changes are safely queued on this device.");
       return;
     }
-    setOnline(true);
     const queued = await getAllQueued();
     setQueueCount(queued.length);
     if (!queued.length) {
@@ -127,8 +136,8 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
       void refreshQueue();
       if (navigator.onLine) void syncQueued();
     },0);
-    const handleOnline = () => { setOnline(true); void syncQueued(); };
-    const handleOffline = () => { setOnline(false); setMessage("Offline. New work will be queued locally."); };
+    const handleOnline = () => { void syncQueued(); };
+    const handleOffline = () => { setMessage("Offline. New work will be queued locally."); };
     window.addEventListener("online",handleOnline);
     window.addEventListener("offline",handleOffline);
     return () => {
