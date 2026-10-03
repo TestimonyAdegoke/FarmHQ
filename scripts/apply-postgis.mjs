@@ -17,7 +17,7 @@ try {
   await client.query("COMMIT");
   process.stdout.write("FarmHQ PostGIS v0.4 spatial upgrade applied successfully.\n");
 } catch (error) {
-  try { await client.query("ROLLBACK"); } catch {}
+  try { await client.query("ROLLBACK"); } catch { /* best-effort rollback */ }
   throw error;
 } finally {
   await client.end();
