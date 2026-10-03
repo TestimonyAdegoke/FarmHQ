@@ -2,6 +2,7 @@ import "server-only";
 
 import type { InventoryTxnType, Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { farmWhere, relatedFarmWhere, type FarmScope } from "@/lib/farm-scope";
 
 export const OUTBOUND_TYPES: InventoryTxnType[] = ["ISSUE", "TRANSFER_OUT", "ADJUSTMENT_OUT", "SALE", "WASTE"];
 
@@ -17,11 +18,11 @@ export function labourCost(t: { hours: unknown; hourlyRate: unknown; amount?: un
 
 type Client = Prisma.TransactionClient | typeof db;
 
-/** On-hand quantity per warehouse+product (key `${warehouseId}:${productId}`) and per product (key productId). */
-export async function stockPositions(tenantId: string, client: Client = db) {
+/** On-hand quantity per warehouse+product (key `${warehouseId}:${productId}`) and per product (key productId), limited to warehouses in `scope`. */
+export async function stockPositions(tenantId: string, client: Client = db, scope: FarmScope = []) {
   const rows = await client.inventoryTransaction.groupBy({
     by: ["warehouseId", "productId", "type"],
-    where: { tenantId },
+    where: { tenantId, ...relatedFarmWhere(scope, "warehouse") },
     _sum: { quantity: true },
   });
   const byLocation = new Map<string, number>();
@@ -81,10 +82,10 @@ export function invoiceDisplayStatus(invoice: { status: string; dueDate: Date | 
   return isOverdue(invoice) ? "OVERDUE" : invoice.status;
 }
 
-/** Outstanding receivables per customer from open invoices. */
-export async function customerBalances(tenantId: string) {
+/** Outstanding receivables per customer from open invoices on farms in `scope`. */
+export async function customerBalances(tenantId: string, scope: FarmScope = []) {
   const rows = await db.invoice.findMany({
-    where: { tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] } },
+    where: { tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...farmWhere(scope) },
     select: { customerId: true, total: true, amountPaid: true, dueDate: true, status: true },
   });
   const map = new Map<string, { outstanding: number; overdue: number }>();

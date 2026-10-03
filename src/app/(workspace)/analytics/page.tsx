@@ -10,10 +10,10 @@ export const metadata={title:"Analytics"};
 export default async function AnalyticsPage(){
  const ctx=await tenantContext("analytics.view");
  const [farms,cycles,expenses,units]=await Promise.all([
-  db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},include:{_count:{select:{cycles:true,units:true}}},orderBy:{name:"asc"}}),
-  db.productionCycle.findMany({where:{tenantId:ctx.tenantId},include:{expenses:true},orderBy:{createdAt:"desc"}}),
-  db.expense.findMany({where:{tenantId:ctx.tenantId,status:{in:["APPROVED","PAID"]}}}),
-  db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true}}),
+  db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},include:{_count:{select:{cycles:true,units:true}}},orderBy:{name:"asc"}}),
+  db.productionCycle.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{expenses:true},orderBy:{createdAt:"desc"}}),
+  db.expense.findMany({where:{tenantId:ctx.tenantId,status:{in:["APPROVED","PAID"]},...ctx.scope.byFarm}}),
+  db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.byFarm}}),
  ]);
  const spend=expenses.reduce((s,e)=>s+Number(e.amount),0);
  const area=units.reduce((s,u)=>s+Number(u.areaHa||0),0);

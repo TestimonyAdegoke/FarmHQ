@@ -13,10 +13,10 @@ export const metadata = { title: "Livestock" };
 export default async function LivestockPage() {
   const ctx = await tenantContext("livestock.view");
   const [farms, units, animals, healthEvents] = await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true,type:{in:["BARN","PEN","GRAZING_AREA","OTHER"]}},orderBy:{name:"asc"}}),
-    db.animal.findMany({where:{tenantId:ctx.tenantId},include:{farm:true,unit:true},orderBy:{createdAt:"desc"}}),
-    db.animalHealthEvent.findMany({where:{tenantId:ctx.tenantId},include:{animal:{include:{farm:true}}},orderBy:{eventDate:"desc"},take:100}),
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.byFarm,type:{in:["BARN","PEN","GRAZING_AREA","OTHER"]}},orderBy:{name:"asc"}}),
+    db.animal.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{farm:true,unit:true},orderBy:{createdAt:"desc"}}),
+    db.animalHealthEvent.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.via("animal")},include:{animal:{include:{farm:true}}},orderBy:{eventDate:"desc"},take:100}),
   ]);
   const active=animals.filter(a=>a.status==="ACTIVE").length;
   const species=new Set(animals.map(a=>a.species.toLowerCase())).size;

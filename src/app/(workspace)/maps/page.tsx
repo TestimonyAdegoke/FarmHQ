@@ -13,8 +13,8 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
   const ctx = await tenantContext("farm.view");
   const query = await searchParams;
   const [farms, units] = await Promise.all([
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true }, include: { farm: true }, orderBy: [{ farm: { name: "asc" } }, { name: "asc" }] }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, include: { farm: true }, orderBy: [{ farm: { name: "asc" } }, { name: "asc" }] }),
   ]);
   const selected = units.find((u) => u.id === query.unitId) || units[0];
 

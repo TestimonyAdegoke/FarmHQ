@@ -17,10 +17,10 @@ export default async function WorkerPage({ params }: { params: Promise<{ id: str
   const ctx = await tenantContext("workforce.view");
   const { id } = await params;
   const worker = await db.workforceMember.findFirst({
-    where: { id, tenantId: ctx.tenantId },
+    where: { id, tenantId: ctx.tenantId, ...ctx.scope.byFarm },
     include: {
       farm: true,
-      timesheets: { include: { cycle: true }, orderBy: { workDate: "desc" }, take: 60 },
+      timesheets: { where: ctx.scope.byFarm, include: { cycle: true }, orderBy: { workDate: "desc" }, take: 60 },
       advances: { include: { payRun: { select: { runNo: true } } }, orderBy: { issuedAt: "desc" }, take: 30 },
       payRunLines: { include: { payRun: true }, orderBy: { payRun: { periodEnd: "desc" } }, take: 24 },
     },

@@ -15,12 +15,12 @@ export const metadata = { title: "Traceability" };
 export default async function TraceabilityPage() {
   const ctx = await tenantContext("inventory.view");
   const [lots, products, farms, cycles, harvests, warehouses] = await Promise.all([
-    db.traceLot.findMany({ where: { tenantId: ctx.tenantId }, include: { events: { orderBy: { occurredAt: "desc" }, take: 5 }, children: { select: { id: true, lotCode: true } }, parent: { select: { id: true, lotCode: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
+    db.traceLot.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { events: { orderBy: { occurredAt: "desc" }, take: 5 }, children: { select: { id: true, lotCode: true } }, parent: { select: { id: true, lotCode: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: "desc" }, take: 200 }),
-    db.harvestRecord.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { harvestedAt: "desc" }, take: 200 }),
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, orderBy: { createdAt: "desc" }, take: 200 }),
+    db.harvestRecord.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, orderBy: { harvestedAt: "desc" }, take: 200 }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
   ]);
   const productNames = new Map(products.map(p=>[p.id,p.name]));
   const farmNames = new Map(farms.map(f=>[f.id,f.name]));
@@ -43,7 +43,7 @@ export default async function TraceabilityPage() {
         <div className="form-grid two">
           <div className="field"><label>Lot code</label><input name="lotCode" required placeholder="MAIZE-26-001"/></div>
           <div className="field"><label>Product</label><select name="productId" defaultValue=""><option value="">Not catalogued</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-          <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Not linked</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+          <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Not linked</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
           <div className="field"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">Not linked</option>{cycles.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <div className="field span-2"><label>Source harvest</label><select name="harvestRecordId" defaultValue=""><option value="">No direct harvest link</option>{harvests.map(h=><option key={h.id} value={h.id}>{safeDate(h.harvestedAt)} · {h.lotNumber||h.id.slice(-8)} · {formatNumber(h.quantity,3)} {h.unit}</option>)}</select></div>
           <div className="field span-2"><label>Parent lot</label><select name="parentLotId" defaultValue=""><option value="">Original lot</option>{lots.map(l=><option key={l.id} value={l.id}>{l.lotCode}</option>)}</select></div>

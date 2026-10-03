@@ -93,6 +93,13 @@ details.form-details > .details-body { padding:0 20px 20px; }
 .doc-actions { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
 
 .attendance-list { display:flex; flex-direction:column; gap:8px; max-height:460px; overflow:auto; padding-right:4px; }
+.farm-scope summary { cursor:pointer; list-style:none; }
+.farm-scope summary::-webkit-details-marker { display:none; }
+.farm-scope[open] summary { margin-bottom:8px; }
+.farm-scope .form-actions { margin-top:8px; }
+.farm-scope-list { display:grid; gap:6px; margin-bottom:6px; min-width:200px; }
+.farm-scope-list label { display:flex; gap:8px; align-items:center; font-weight:500; }
+.farm-scope-list input[type="checkbox"] { width:18px; height:18px; min-height:0; accent-color:var(--brand); }
 .attendance-row { display:grid; grid-template-columns:28px 1fr 90px 90px; gap:10px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); }
 .attendance-row input[type="checkbox"] { width:22px; height:22px; min-height:0; accent-color:var(--brand); }
 .attendance-row input[type="number"] { padding:8px; }

@@ -1,15 +1,17 @@
 import { CheckSquare, Plus } from "lucide-react";
 import { createComplianceActionAction, updateComplianceActionStatusAction } from "@/app/v04-ops-actions";
 import { db } from "@/lib/db";
+import { complianceRecordIdWhere, type FarmScope } from "@/lib/farm-scope";
 import { safeDate } from "@/lib/utils";
 import { ActionForm } from "@/components/action-form";
 
-export async function ComplianceActionsPanel({ tenantId, records }:{
+export async function ComplianceActionsPanel({ tenantId, farmScope, records }:{
   tenantId:string;
+  farmScope:FarmScope;
   records:{id:string;title:string}[];
 }) {
   const [actions,memberships] = await Promise.all([
-    db.complianceAction.findMany({where:{tenantId},orderBy:[{dueAt:"asc"},{createdAt:"desc"}],take:100}),
+    db.complianceAction.findMany({where:{tenantId,...(await complianceRecordIdWhere(tenantId,farmScope))},orderBy:[{dueAt:"asc"},{createdAt:"desc"}],take:100}),
     db.membership.findMany({where:{tenantId},include:{user:true},orderBy:{user:{name:"asc"}}}),
   ]);
   const recordNames=new Map(records.map(record=>[record.id,record.title]));

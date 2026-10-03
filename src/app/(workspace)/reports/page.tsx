@@ -17,10 +17,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const year = Number(params.year) || thisYear;
   const start = new Date(year, 0, 1), end = new Date(year + 1, 0, 1);
   const [revenues, expenses, lines, payments] = await Promise.all([
-    db.revenue.findMany({ where: { tenantId: ctx.tenantId, occurredAt: { gte: start, lt: end } }, select: { occurredAt: true, amount: true } }),
-    db.expense.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["APPROVED", "PAID"] }, incurredAt: { gte: start, lt: end } }, select: { incurredAt: true, amount: true, category: true } }),
-    db.invoiceItem.findMany({ where: { tenantId: ctx.tenantId, invoice: { status: { not: "VOID" }, issueDate: { gte: start, lt: end } } }, select: { description: true, quantity: true, unit: true, lineTotal: true, product: { select: { name: true } }, invoice: { select: { customer: { select: { name: true } } } } } }),
-    db.paymentReceived.findMany({ where: { tenantId: ctx.tenantId, receivedAt: { gte: start, lt: end } }, select: { receivedAt: true, amount: true } }),
+    db.revenue.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, occurredAt: { gte: start, lt: end } }, select: { occurredAt: true, amount: true } }),
+    db.expense.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, status: { in: ["APPROVED", "PAID"] }, incurredAt: { gte: start, lt: end } }, select: { incurredAt: true, amount: true, category: true } }),
+    db.invoiceItem.findMany({ where: { tenantId: ctx.tenantId, invoice: { status: { not: "VOID" }, issueDate: { gte: start, lt: end }, ...ctx.scope.byFarm } }, select: { description: true, quantity: true, unit: true, lineTotal: true, product: { select: { name: true } }, invoice: { select: { customer: { select: { name: true } } } } } }),
+    db.paymentReceived.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("invoice"), receivedAt: { gte: start, lt: end } }, select: { receivedAt: true, amount: true } }),
   ]);
   const money = (n: number) => formatMoney(n, ctx.tenant.currency);
   const monthly = months.map((m, i) => ({ m, income: 0, spend: 0, cash: 0, i }));
@@ -40,7 +40,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   });
   const byCategory = new Map<string, number>();
   expenses.forEach(e => byCategory.set(e.category, (byCategory.get(e.category) || 0) + Number(e.amount)));
-  const allowed = Object.entries(datasets).filter(([, def]) => ctx.can(def.permission));
+  const allowed = Object.entries(datasets).filter(([, def]) => ctx.can(def.permission) && !(def.organisationWide && ctx.scope.limited));
   const qs = new URLSearchParams({ ...(params.from ? { from: params.from } : {}), ...(params.to ? { to: params.to } : {}) }).toString();
 
   return <>

@@ -12,7 +12,7 @@ export const metadata = { title: "Profitability" };
 export default async function ProfitabilityPage() {
   const ctx=await tenantContext("finance.view");
   const cycles=await db.productionCycle.findMany({
-    where:{tenantId:ctx.tenantId},
+    where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},
     include:{farm:true,unit:true,expenses:true,revenues:true,harvestRecords:true,timesheets:true,equipmentLogs:true,inventoryTxns:{include:{product:true}}},
     orderBy:{createdAt:"desc"},
   });

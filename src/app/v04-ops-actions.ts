@@ -12,7 +12,7 @@ import {
 import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runNotificationDeliveries, validateWebhookUrl } from "@/lib/notification-delivery";
-import { can } from "@/lib/permissions";
+import { complianceRecordIdWhere, farmWhere, memberCan, warehouseIdWhere } from "@/lib/farm-scope";
 import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
@@ -57,10 +57,10 @@ async function warehouseStock(tenantId: string, warehouseId: string, productId: 
 
 async function createStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
   const warehouse = await db.warehouse.findFirst({
-    where: { id: warehouseId, tenantId: session.tenantId, active: true },
+    where: { id: warehouseId, tenantId: session.tenantId, active: true, ...farmWhere(membership.farmScope) },
     select: { id: true },
   });
   if (!warehouse) throw new Error("Warehouse not found");
@@ -81,14 +81,14 @@ async function createStockCountSessionActionImpl(form: FormData) {
 
 async function addStockCountLineActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const sessionId = text(form, "sessionId");
   const productId = text(form, "productId");
   const countedQuantity = z.number().nonnegative().parse(numberValue(form, "countedQuantity"));
   const lotNumber = optional(form, "lotNumber");
   const [countSession, product] = await Promise.all([
     db.stockCountSession.findFirst({
-      where: { id: sessionId, tenantId: session.tenantId, status: CountSessionStatus.OPEN },
+      where: { id: sessionId, tenantId: session.tenantId, status: CountSessionStatus.OPEN, ...(await warehouseIdWhere(session.tenantId, membership.farmScope)) },
       select: { id: true, warehouseId: true, sessionNo: true },
     }),
     db.product.findFirst({
@@ -125,10 +125,10 @@ async function addStockCountLineActionImpl(form: FormData) {
 
 async function closeStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const countSession = await db.stockCountSession.findFirst({
-    where: { id, tenantId: session.tenantId, status: CountSessionStatus.OPEN },
+    where: { id, tenantId: session.tenantId, status: CountSessionStatus.OPEN, ...(await warehouseIdWhere(session.tenantId, membership.farmScope)) },
     include: { lines: true },
   });
   if (!countSession) throw new Error("Open count session not found");
@@ -179,10 +179,10 @@ async function closeStockCountSessionActionImpl(form: FormData) {
 
 async function cancelStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const countSession = await db.stockCountSession.findFirst({
-    where: { id, tenantId: session.tenantId, status: CountSessionStatus.OPEN },
+    where: { id, tenantId: session.tenantId, status: CountSessionStatus.OPEN, ...(await warehouseIdWhere(session.tenantId, membership.farmScope)) },
     select: { id: true, sessionNo: true },
   });
   if (!countSession) throw new Error("Open count session not found");
@@ -193,10 +193,10 @@ async function cancelStockCountSessionActionImpl(form: FormData) {
 
 async function createComplianceActionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage") && !memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const complianceRecordId = text(form, "complianceRecordId");
   const record = await db.complianceRecord.findFirst({
-    where: { id: complianceRecordId, tenantId: session.tenantId },
+    where: { id: complianceRecordId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) },
     select: { id: true },
   });
   if (!record) throw new Error("Compliance record not found");
@@ -224,10 +224,10 @@ async function createComplianceActionActionImpl(form: FormData) {
 
 async function updateComplianceActionStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage") && !memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(ComplianceActionStatus).parse(text(form, "status"));
-  const action = await db.complianceAction.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const action = await db.complianceAction.findFirst({ where: { id, tenantId: session.tenantId, ...(await complianceRecordIdWhere(session.tenantId, membership.farmScope)) }, select: { id: true } });
   if (!action) throw new Error("Compliance action not found");
   await db.complianceAction.update({
     where: { id },
@@ -243,7 +243,7 @@ async function updateComplianceActionStatusActionImpl(form: FormData) {
 
 async function createNotificationEndpointActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const url = validateWebhookUrl(text(form, "url"));
   const endpoint = await db.notificationEndpoint.create({
     data: {
@@ -260,7 +260,7 @@ async function createNotificationEndpointActionImpl(form: FormData) {
 
 async function toggleNotificationEndpointActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const endpoint = await db.notificationEndpoint.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true, active: true } });
   if (!endpoint) throw new Error("Notification endpoint not found");
@@ -271,7 +271,7 @@ async function toggleNotificationEndpointActionImpl(form: FormData) {
 
 async function deliverNotificationsActionImpl() {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const result = await runNotificationDeliveries(session.tenantId);
   await audit("notification_delivery.run", "NotificationEndpoint", undefined, result);
   revalidatePath("/automations");

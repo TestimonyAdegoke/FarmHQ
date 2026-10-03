@@ -11,7 +11,7 @@ import {
 } from "@/generated/prisma/client";
 import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { can } from "@/lib/permissions";
+import { assertFarmAccess, farmWhere, isScoped, memberCan, resolveFarmId } from "@/lib/farm-scope";
 import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
@@ -55,10 +55,11 @@ async function warehouseStock(tenantId: string, warehouseId: string, productId: 
 
 async function updateFarmCoordinatesActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
   const latitude = z.number().min(-90).max(90).parse(numberValue(form, "latitude"));
   const longitude = z.number().min(-180).max(180).parse(numberValue(form, "longitude"));
+  assertFarmAccess(membership.farmScope, farmId);
   const farm = await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } });
   if (!farm) throw new Error("Farm not found");
   await db.farm.update({ where: { id: farmId }, data: { latitude, longitude } });
@@ -69,11 +70,11 @@ async function updateFarmCoordinatesActionImpl(form: FormData) {
 
 async function saveUnitGeometryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage")) throw new Error("Forbidden");
   const unitId = text(form, "unitId");
   const geometryText = text(form, "geometryGeoJson");
   const unit = await db.productionUnit.findFirst({
-    where: { id: unitId, tenantId: session.tenantId },
+    where: { id: unitId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) },
     select: { id: true },
   });
   if (!unit) throw new Error("Production unit not found");
@@ -102,7 +103,7 @@ async function saveUnitGeometryActionImpl(form: FormData) {
 
 async function transferInventoryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const fromWarehouseId = text(form, "fromWarehouseId");
   const toWarehouseId = text(form, "toWarehouseId");
   const productId = text(form, "productId");
@@ -110,8 +111,8 @@ async function transferInventoryActionImpl(form: FormData) {
   if (fromWarehouseId === toWarehouseId) throw new Error("Source and destination warehouses must differ");
 
   const [from, to, product] = await Promise.all([
-    db.warehouse.findFirst({ where: { id: fromWarehouseId, tenantId: session.tenantId }, select: { id: true } }),
-    db.warehouse.findFirst({ where: { id: toWarehouseId, tenantId: session.tenantId }, select: { id: true } }),
+    db.warehouse.findFirst({ where: { id: fromWarehouseId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }),
+    db.warehouse.findFirst({ where: { id: toWarehouseId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }),
     db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true, standardCost: true } }),
   ]);
   if (!from || !to || !product) throw new Error("Invalid warehouse or product");
@@ -151,12 +152,12 @@ async function transferInventoryActionImpl(form: FormData) {
 
 async function createStockCountActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
   const productId = text(form, "productId");
   const countedQuantity = z.number().nonnegative().parse(numberValue(form, "countedQuantity"));
   const [warehouse, product] = await Promise.all([
-    db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId }, select: { id: true } }),
+    db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }),
     db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true, standardCost: true } }),
   ]);
   if (!warehouse || !product) throw new Error("Invalid warehouse or product");
@@ -203,8 +204,8 @@ async function createStockCountActionImpl(form: FormData) {
 
 async function createComplianceRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "farm.manage") && !memberCan(membership, "production.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
   if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const record = await db.complianceRecord.create({
     data: {
@@ -227,10 +228,11 @@ async function createComplianceRecordActionImpl(form: FormData) {
 
 async function createChemicalApplicationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
   const unitId = optional(form, "unitId");
   const cycleId = optional(form, "cycleId");
+  assertFarmAccess(membership.farmScope, farmId);
   const [farm, unit, cycle] = await Promise.all([
     db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }),
     unitId ? db.productionUnit.findFirst({ where: { id: unitId, tenantId: session.tenantId, farmId }, select: { id: true } }) : Promise.resolve({ id: "" }),
@@ -262,9 +264,11 @@ async function createChemicalApplicationActionImpl(form: FormData) {
 
 async function createDocumentRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "farm.manage") && !memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
   const cycleId = optional(form, "cycleId");
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Production cycle not found");
   const record = await db.documentRecord.create({
     data: {
       tenantId: session.tenantId,
@@ -284,7 +288,7 @@ async function createDocumentRecordActionImpl(form: FormData) {
 
 async function createAutomationRuleActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const rule = await db.automationRule.create({
     data: {
       tenantId: session.tenantId,
@@ -309,7 +313,7 @@ async function notificationExists(tenantId: string, ruleId: string, entityType: 
 
 async function runAutomationRulesActionImpl() {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const rules = await db.automationRule.findMany({ where: { tenantId: session.tenantId, active: true } });
   let created = 0;
 
@@ -394,8 +398,9 @@ async function runAutomationRulesActionImpl() {
 }
 
 async function markNotificationReadActionImpl(form: FormData) {
-  const { session } = await requireSession();
+  const { session, membership } = await requireSession();
   const id = text(form, "id");
+  if (isScoped(membership.farmScope)) throw new Error("Notification not found");
   const notification = await db.notification.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
   if (!notification) throw new Error("Notification not found");
   await db.notification.update({ where: { id }, data: { readAt: new Date() } });

@@ -17,7 +17,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const { id } = await params;
   const created = (await searchParams).created === "1";
   const [invoice, accounts] = await Promise.all([
-    db.invoice.findFirst({ where: { id, tenantId: ctx.tenantId }, include: { customer: true, items: { include: { product: true } }, payments: { include: { account: true }, orderBy: { receivedAt: "asc" } }, salesOrder: { select: { orderNo: true } } } }),
+    db.invoice.findFirst({ where: { id, tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { customer: true, items: { include: { product: true } }, payments: { include: { account: true }, orderBy: { receivedAt: "asc" } }, salesOrder: { select: { orderNo: true } } } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
   ]);
   if (!invoice) notFound();

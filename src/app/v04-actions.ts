@@ -6,7 +6,7 @@ import { z } from "zod";
 import { TraceEventType, TraceLotStatus, IotDeviceKind } from "@/generated/prisma/client";
 import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { can } from "@/lib/permissions";
+import { assertFarmAccess, farmWhere, memberCan, resolveFarmId } from "@/lib/farm-scope";
 import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
@@ -29,11 +29,12 @@ function sha256(value: string) {
 
 async function createTraceLotActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage") && !memberCan(membership, "production.manage")) throw new Error("Forbidden");
 
   const lotCode = z.string().min(2).max(80).parse(text(form, "lotCode"));
   const productId = optional(form, "productId");
-  const farmId = optional(form, "farmId");
+  const scope = membership.farmScope;
+  const farmId = resolveFarmId(scope, optional(form, "farmId"));
   const cycleId = optional(form, "cycleId");
   const harvestRecordId = optional(form, "harvestRecordId");
   const parentLotId = optional(form, "parentLotId");
@@ -41,9 +42,9 @@ async function createTraceLotActionImpl(form: FormData) {
   const [product, farm, cycle, harvest, parent] = await Promise.all([
     productId ? db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve(null),
     farmId ? db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve(null),
-    cycleId ? db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve(null),
-    harvestRecordId ? db.harvestRecord.findFirst({ where: { id: harvestRecordId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve(null),
-    parentLotId ? db.traceLot.findFirst({ where: { id: parentLotId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve(null),
+    cycleId ? db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve(null),
+    harvestRecordId ? db.harvestRecord.findFirst({ where: { id: harvestRecordId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve(null),
+    parentLotId ? db.traceLot.findFirst({ where: { id: parentLotId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve(null),
   ]);
   if (productId && !product) throw new Error("Product not found");
   if (farmId && !farm) throw new Error("Farm not found");
@@ -92,10 +93,12 @@ async function createTraceLotActionImpl(form: FormData) {
 
 async function createTraceEventActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage") && !can(membership.role, "sales.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage") && !memberCan(membership, "production.manage") && !memberCan(membership, "sales.manage")) throw new Error("Forbidden");
   const lotId = text(form, "lotId");
-  const lot = await db.traceLot.findFirst({ where: { id: lotId, tenantId: session.tenantId } });
+  const lot = await db.traceLot.findFirst({ where: { id: lotId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) } });
   if (!lot) throw new Error("Trace lot not found");
+  const warehouseId = optional(form, "warehouseId");
+  if (warehouseId && !(await db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Warehouse not found");
 
   const type = z.nativeEnum(TraceEventType).parse(text(form, "type"));
   const event = await db.$transaction(async (tx) => {
@@ -104,7 +107,7 @@ async function createTraceEventActionImpl(form: FormData) {
         tenantId: session.tenantId,
         lotId,
         type,
-        warehouseId: optional(form, "warehouseId"),
+        warehouseId,
         quantity: numberValue(form, "quantity"),
         unit: optional(form, "unit"),
         reference: optional(form, "reference"),
@@ -128,10 +131,10 @@ async function createTraceEventActionImpl(form: FormData) {
 
 async function updateTraceLotStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage") && !memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(TraceLotStatus).parse(text(form, "status"));
-  const lot = await db.traceLot.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const lot = await db.traceLot.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } });
   if (!lot) throw new Error("Trace lot not found");
   await db.traceLot.update({ where: { id }, data: { status } });
   await audit("trace_lot.status", "TraceLot", id, { status });
@@ -140,11 +143,12 @@ async function updateTraceLotStatusActionImpl(form: FormData) {
 
 async function createIotDeviceActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage") && !can(membership.role, "equipment.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage") && !memberCan(membership, "equipment.manage")) throw new Error("Forbidden");
 
   const farmId = text(form, "farmId");
   const unitId = optional(form, "unitId");
   const secret = z.string().min(16).max(256).parse(text(form, "secret"));
+  assertFarmAccess(membership.farmScope, farmId);
   const [farm, unit] = await Promise.all([
     db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }),
     unitId ? db.productionUnit.findFirst({ where: { id: unitId, tenantId: session.tenantId, farmId }, select: { id: true } }) : Promise.resolve(null),
@@ -168,9 +172,9 @@ async function createIotDeviceActionImpl(form: FormData) {
 
 async function toggleIotDeviceActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage") && !can(membership.role, "equipment.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage") && !memberCan(membership, "equipment.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
-  const device = await db.iotDevice.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true, active: true } });
+  const device = await db.iotDevice.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true, active: true } });
   if (!device) throw new Error("Device not found");
   await db.iotDevice.update({ where: { id }, data: { active: !device.active } });
   await audit("iot_device.toggle", "IotDevice", id, { active: !device.active });

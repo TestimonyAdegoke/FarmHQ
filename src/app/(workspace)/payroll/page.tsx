@@ -13,7 +13,7 @@ import { formatMoney, safeDate, toDateInput } from "@/lib/utils";
 export const metadata = { title: "Payroll" };
 
 export default async function PayrollPage() {
-  const ctx = await tenantContext("workforce.view");
+  const ctx = await tenantContext("workforce.view", { organisationWide: true });
   const now = new Date();
   const [runs, unpaid, farms, advances] = await Promise.all([
     db.payRun.findMany({ where: { tenantId: ctx.tenantId }, include: { lines: { select: { netPay: true, grossPay: true } } }, orderBy: { periodEnd: "desc" }, take: 50 }),

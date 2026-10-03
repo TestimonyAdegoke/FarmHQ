@@ -16,7 +16,7 @@ export const metadata = { title: "Cash & Bank" };
 type Movement = { date: Date; account: string; text: string; ref?: string | null; amount: number };
 
 export default async function AccountsPage() {
-  const ctx = await tenantContext("finance.view");
+  const ctx = await tenantContext("finance.view", { organisationWide: true });
   const t = ctx.tenantId;
   const [accounts, balances, receipts, vendorPaid, expenses, transfers, advances, payRuns] = await Promise.all([
     db.moneyAccount.findMany({ where: { tenantId: t }, orderBy: [{ active: "desc" }, { name: "asc" }] }),

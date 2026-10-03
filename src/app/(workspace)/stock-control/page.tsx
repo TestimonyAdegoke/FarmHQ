@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
+import { warehouseIdWhere } from "@/lib/farm-scope";
 import { tenantContext } from "@/lib/tenant";
 import { formatNumber, safeDate } from "@/lib/utils";
 import { ActionForm } from "@/components/action-form";
@@ -17,12 +18,13 @@ const negative = new Set(["ISSUE","TRANSFER_OUT","ADJUSTMENT_OUT","SALE","WASTE"
 export default async function StockControlPage({ searchParams }: { searchParams: Promise<{ sessionId?:string }> }) {
   const ctx = await tenantContext("inventory.view");
   const query = await searchParams;
+  const warehouseScope = await warehouseIdWhere(ctx.tenantId, ctx.farmScope);
   const [warehouses, products, txns, sessions, legacyCounts] = await Promise.all([
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, include: { farm: true }, orderBy: { name: "asc" } }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, include: { farm: true }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.inventoryTransaction.findMany({ where: { tenantId: ctx.tenantId }, select: { warehouseId: true, productId: true, type: true, quantity: true } }),
-    db.stockCountSession.findMany({ where: { tenantId: ctx.tenantId }, include: { lines: true }, orderBy: { startedAt:"desc" }, take:40 }),
-    db.stockCount.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { countedAt: "desc" }, take: 30 }),
+    db.inventoryTransaction.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("warehouse") }, select: { warehouseId: true, productId: true, type: true, quantity: true } }),
+    db.stockCountSession.findMany({ where: { tenantId: ctx.tenantId, ...warehouseScope }, include: { lines: true }, orderBy: { startedAt:"desc" }, take:40 }),
+    db.stockCount.findMany({ where: { tenantId: ctx.tenantId, ...warehouseScope }, orderBy: { countedAt: "desc" }, take: 30 }),
   ]);
 
   const balance = new Map<string,number>();

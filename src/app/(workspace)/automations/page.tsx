@@ -12,7 +12,7 @@ import { ActionForm } from "@/components/action-form";
 export const metadata = { title: "Automations" };
 
 export default async function AutomationsPage() {
-  const ctx=await tenantContext("farm.view");
+  const ctx=await tenantContext("farm.view", { organisationWide: true });
   const [rules,notifications]=await Promise.all([
     db.automationRule.findMany({where:{tenantId:ctx.tenantId},orderBy:{createdAt:"desc"}}),
     db.notification.findMany({where:{tenantId:ctx.tenantId},orderBy:{createdAt:"desc"},take:150}),

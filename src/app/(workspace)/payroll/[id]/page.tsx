@@ -15,7 +15,7 @@ const unitLabel: Record<string, string> = { HOURLY: "hours", DAILY: "days", MONT
 const unitsOf = (l: { basis: string; worker: { pieceUnit: string | null } }) => l.basis === "PIECE_RATE" && l.worker.pieceUnit ? `${l.worker.pieceUnit}s` : unitLabel[l.basis];
 
 export default async function PayRunPage({ params }: { params: Promise<{ id: string }> }) {
-  const ctx = await tenantContext("workforce.view");
+  const ctx = await tenantContext("workforce.view", { organisationWide: true });
   const { id } = await params;
   const [run, accounts] = await Promise.all([
     db.payRun.findFirst({ where: { id, tenantId: ctx.tenantId }, include: { account: true, lines: { include: { worker: true }, orderBy: { worker: { name: "asc" } } } } }),

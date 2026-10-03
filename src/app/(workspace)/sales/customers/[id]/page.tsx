@@ -20,7 +20,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const ctx = await tenantContext("sales.view");
   const { id } = await params;
   const [customer, accounts] = await Promise.all([
-    db.customer.findFirst({ where: { id, tenantId: ctx.tenantId }, include: { invoices: { orderBy: { issueDate: "asc" } }, payments: { orderBy: { receivedAt: "asc" }, include: { invoice: { select: { invoiceNo: true } } } } } }),
+    db.customer.findFirst({ where: { id, tenantId: ctx.tenantId }, include: { invoices: { where: ctx.scope.byFarm, orderBy: { issueDate: "asc" } }, payments: { where: ctx.scope.via("invoice"), orderBy: { receivedAt: "asc" }, include: { invoice: { select: { invoiceNo: true } } } } } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
   ]);
   if (!customer) notFound();

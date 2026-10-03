@@ -21,22 +21,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const showMoney = ctx.can("finance.view");
   const [farms, activeCycles, monthRevenue, monthSpend, openTasks, myTasks, recentCycles, products, positions, criticalObservations, openInvoices, openPOs, balances, pendingSheets, pendingExpenses, unread] = await Promise.all([
-    db.farm.count({ where: { tenantId: t, active: true } }),
-    db.productionCycle.count({ where: { tenantId: t, status: "ACTIVE" } }),
-    db.revenue.aggregate({ where: { tenantId: t, occurredAt: { gte: monthStart } }, _sum: { amount: true } }),
-    db.expense.aggregate({ where: { tenantId: t, status: { in: ["APPROVED", "PAID"] }, incurredAt: { gte: monthStart } }, _sum: { amount: true } }),
-    db.task.findMany({ where: { tenantId: t, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] } }, include: { farm: true, assignedTo: true }, orderBy: [{ priority: "desc" }, { dueAt: "asc" }], take: 8 }),
-    db.task.count({ where: { tenantId: t, assignedToId: ctx.userId, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] } } }),
-    db.productionCycle.findMany({ where: { tenantId: t, status: { in: ["ACTIVE", "PLANNED"] } }, include: { farm: true }, orderBy: { createdAt: "desc" }, take: 6 }),
+    db.farm.count({ where: { tenantId: t, active: true, ...ctx.scope.farms } }),
+    db.productionCycle.count({ where: { tenantId: t, status: "ACTIVE", ...ctx.scope.byFarm } }),
+    db.revenue.aggregate({ where: { tenantId: t, occurredAt: { gte: monthStart }, ...ctx.scope.byFarm }, _sum: { amount: true } }),
+    db.expense.aggregate({ where: { tenantId: t, status: { in: ["APPROVED", "PAID"] }, incurredAt: { gte: monthStart }, ...ctx.scope.byFarm }, _sum: { amount: true } }),
+    db.task.findMany({ where: { tenantId: t, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] }, ...ctx.scope.byFarm }, include: { farm: true, assignedTo: true }, orderBy: [{ priority: "desc" }, { dueAt: "asc" }], take: 8 }),
+    db.task.count({ where: { tenantId: t, assignedToId: ctx.userId, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] }, ...ctx.scope.byFarm } }),
+    db.productionCycle.findMany({ where: { tenantId: t, status: { in: ["ACTIVE", "PLANNED"] }, ...ctx.scope.byFarm }, include: { farm: true }, orderBy: { createdAt: "desc" }, take: 6 }),
     db.product.findMany({ where: { tenantId: t, active: true, reorderLevel: { not: null } }, select: { id: true, name: true, unit: true, reorderLevel: true } }),
-    stockPositions(t),
-    db.scoutingObservation.findMany({ where: { tenantId: t, resolvedAt: null, severity: { in: ["HIGH", "CRITICAL"] } }, include: { farm: true }, orderBy: { observedAt: "desc" }, take: 3 }),
-    showMoney || ctx.can("sales.view") ? db.invoice.findMany({ where: { tenantId: t, status: { in: ["ISSUED", "PARTIALLY_PAID"] } }, select: { total: true, amountPaid: true, dueDate: true, status: true } }) : Promise.resolve([]),
-    showMoney ? db.purchaseOrder.findMany({ where: { tenantId: t, status: { in: ["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"] } }, include: { items: true, payments: true } }) : Promise.resolve([]),
-    showMoney ? accountBalances(t) : Promise.resolve(new Map<string, { balance: number }>()),
-    ctx.can("workforce.manage") ? db.timesheet.count({ where: { tenantId: t, status: "SUBMITTED" } }) : Promise.resolve(0),
-    ctx.can("finance.manage") ? db.expense.count({ where: { tenantId: t, status: "SUBMITTED" } }) : Promise.resolve(0),
-    db.notification.count({ where: { tenantId: t, readAt: null } }),
+    stockPositions(t, db, ctx.farmScope),
+    db.scoutingObservation.findMany({ where: { tenantId: t, resolvedAt: null, severity: { in: ["HIGH", "CRITICAL"] }, ...ctx.scope.byFarm }, include: { farm: true }, orderBy: { observedAt: "desc" }, take: 3 }),
+    showMoney || ctx.can("sales.view") ? db.invoice.findMany({ where: { tenantId: t, status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...ctx.scope.byFarm }, select: { total: true, amountPaid: true, dueDate: true, status: true } }) : Promise.resolve([]),
+    showMoney ? db.purchaseOrder.findMany({ where: { tenantId: t, status: { in: ["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"] }, ...ctx.scope.byFarm }, include: { items: true, payments: true } }) : Promise.resolve([]),
+    showMoney && !ctx.scope.limited ? accountBalances(t) : Promise.resolve(new Map<string, { balance: number }>()),
+    ctx.can("workforce.manage") ? db.timesheet.count({ where: { tenantId: t, status: "SUBMITTED", ...ctx.scope.byFarm } }) : Promise.resolve(0),
+    ctx.can("finance.manage") ? db.expense.count({ where: { tenantId: t, status: "SUBMITTED", ...ctx.scope.byFarm } }) : Promise.resolve(0),
+    ctx.scope.limited ? Promise.resolve(0) : db.notification.count({ where: { tenantId: t, readAt: null } }),
   ]);
   const money = (n: number | string | { toString(): string }) => formatMoney(n, ctx.tenant.currency);
   const nowMs = new Date().getTime();
@@ -68,12 +68,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   return <>
     <PageHeader eyebrow={new Intl.DateTimeFormat("en-NG", { weekday: "long", day: "numeric", month: "long" }).format(new Date())} title={`${greeting()}, ${ctx.user.name.split(" ")[0]}`} description="Here is what needs your attention across the farm today." />
-    {denied ? <div className="error-banner" role="alert">Your role doesn&apos;t include access to that page. Ask an administrator if you need it.</div> : null}
+    {denied ? <div className="error-banner" role="alert">{denied === "organisation" ? "That page covers the whole organization, and your access is limited to specific farms." : <>Your role doesn&apos;t include access to that page.</>} Ask an administrator if you need it.</div> : null}
     {actions.length ? <div className="quick-actions">{actions.map(a => <Link key={a.href} href={a.href} className={`quick-action ${a.primary ? "primary" : ""}`}><span className="icon-box"><a.icon size={18} /></span>{a.label}</Link>)}</div> : null}
 
     <section className="metrics">
       {showMoney ? <>
-        <MetricCard label="Money available" value={money(cash)} hint={balances.size ? "Cash, bank & mobile money" : "Add accounts under Cash & Bank"} icon={<Wallet size={18} />} />
+        <MetricCard label="Money available" value={ctx.scope.limited ? "—" : money(cash)} hint={ctx.scope.limited ? "Managed for the whole organization" : balances.size ? "Cash, bank & mobile money" : "Add accounts under Cash & Bank"} icon={<Wallet size={18} />} />
         <MetricCard label="Owed to you" value={money(receivable)} hint={overdueCount ? `${overdueCount} overdue invoices` : "Unpaid invoices"} icon={<HandCoins size={18} />} />
         <MetricCard label="This month's result" value={money(income - spend)} hint={`${money(income)} in · ${money(spend)} out`} icon={<CircleDollarSign size={18} />} />
         <MetricCard label="You owe suppliers" value={money(payable)} hint={`${activeCycles} active cycles · ${farms} farms`} icon={<Receipt size={18} />} />
