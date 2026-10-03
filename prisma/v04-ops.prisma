@@ -1,0 +1,134 @@
+enum CountSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ComplianceActionStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  WAIVED
+}
+
+enum NotificationEndpointKind {
+  WEBHOOK
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model StockCountSession {
+  id          String             @id @default(cuid())
+  tenantId    String
+  warehouseId String
+  sessionNo   String
+  status      CountSessionStatus @default(OPEN)
+  startedById String
+  startedAt   DateTime           @default(now())
+  closedAt    DateTime?
+  notes       String?
+  lines       StockCountLine[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([tenantId, sessionNo])
+  @@index([tenantId, status, startedAt])
+  @@index([warehouseId, status])
+}
+
+model StockCountLine {
+  id                String            @id @default(cuid())
+  tenantId          String
+  sessionId         String
+  productId         String
+  lotNumber         String?
+  systemQuantity    Decimal           @db.Decimal(14, 3)
+  countedQuantity   Decimal?          @db.Decimal(14, 3)
+  variance          Decimal?          @db.Decimal(14, 3)
+  adjustmentTxnId   String?
+  notes             String?
+  session           StockCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([sessionId, productId, lotNumber])
+  @@index([tenantId, productId])
+}
+
+model ComplianceAction {
+  id                 String                 @id @default(cuid())
+  tenantId           String
+  complianceRecordId String
+  title              String
+  assignedToId       String?
+  dueAt              DateTime?
+  status             ComplianceActionStatus @default(OPEN)
+  completionNotes    String?
+  completedAt        DateTime?
+  createdById        String
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@index([tenantId, status, dueAt])
+  @@index([complianceRecordId])
+  @@index([assignedToId, status])
+}
+
+model OfflineDevice {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  fingerprint String
+  label       String?
+  platform    String?
+  appVersion  String?
+  active      Boolean  @default(true)
+  lastSeenAt  DateTime @default(now())
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, fingerprint])
+  @@index([tenantId, userId, active])
+}
+
+model NotificationEndpoint {
+  id              String                   @id @default(cuid())
+  tenantId        String
+  name            String
+  kind            NotificationEndpointKind @default(WEBHOOK)
+  url             String
+  minimumSeverity AutomationSeverity       @default(WARNING)
+  active          Boolean                  @default(true)
+  createdById     String
+  deliveries      NotificationDelivery[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+}
+
+model NotificationDelivery {
+  id             String                     @id @default(cuid())
+  tenantId       String
+  notificationId String
+  endpointId     String
+  status         NotificationDeliveryStatus @default(PENDING)
+  attempts       Int                        @default(0)
+  responseCode   Int?
+  error          String?
+  lastAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  endpoint       NotificationEndpoint       @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([notificationId, endpointId])
+  @@index([tenantId, status, createdAt])
+  @@index([endpointId, status])
+}
