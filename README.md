@@ -1,6 +1,6 @@
 # FarmHQ
 
-> Current application milestone: **v0.3.0**
+> Current application milestone: **v0.4.0**
 
 **FarmHQ is the operating system for modern farm businesses.**
 
@@ -211,23 +211,56 @@ Do not enable the RLS policies until the deployment's database transaction/sessi
 
 The web PWA currently caches only the public application shell. Offline authenticated data capture and queued write synchronization are intentionally not claimed as complete yet.
 
+
+## v0.4.0 additions
+
+- PostGIS-backed production-unit polygons with a GiST spatial index and point-in-field lookup API
+- GPS-assisted field resolution from the Field App
+- Historical rainfall, temperature and reference evapotranspiration views
+- Forecast-driven operational advisories for wind, rain, heat, dry periods and disease-conducive humidity
+- Lot-level traceability with parent/child lots, trace events, public trace tokens and QR labels
+- Public farm-to-customer lot history pages without exposing tenant administration data
+- IoT device registry with hashed device secrets and authenticated telemetry ingestion
+- Soil, weather, water, meter, GPS and livestock telemetry storage
+- IndexedDB-based offline field mutation queue for scouting, task completion and crop-activity completion
+- Idempotent offline sync API and registered field-device tracking
+- Session-based physical stock counts with delayed adjustment posting until count closure
+- Compliance corrective actions with assignment, due dates and lifecycle status
+- HTTPS notification webhook endpoints with severity filters, retry history and HMAC signing support
+- Automation cron now evaluates farm rules and then delivers eligible notifications
+- Repeatable `db:postgis` and `db:bootstrap` commands for new environments
+
+### v0.4 database bootstrap
+
+For a new development database:
+
+```bash
+npm run db:bootstrap
+```
+
+For an existing FarmHQ database whose Prisma schema is already applied:
+
+```bash
+npm run db:postgis
+```
+
+The PostGIS step enables the extension, adds the spatial polygon column/index to `ProductionUnit`, backfills existing GeoJSON boundaries and installs the synchronization trigger.
+
+For production environments, establish a reviewed Prisma migration baseline before replacing an existing schema with `prisma db push`; `db:bootstrap` is intended for new environments.
+
 ## Next build layers
 
 The major remaining product layers are:
 
-1. PostGIS-native spatial queries, geofencing and automatic polygon area calculation
-2. Historical weather, rainfall accumulation and weather-triggered operational recommendations
-3. Satellite imagery / NDVI integrations
-4. Lot-level transfer workflow, stock count sessions and barcode scanning
-5. Multi-line RFQ/quotation comparison and procurement approval rules
-6. Dispatch, invoices, receivables and accounting integrations
-7. Livestock breeding genealogy, milk records and medication withdrawal periods
-8. Poultry FCR and cohort analytics
-9. Aquaculture biomass/FCR forecasting
-10. Compliance, certifications, chemical registers and inspections
-11. Document/media storage
-12. IoT device registry and sensor ingestion
-13. Notification + rule/automation engine
-14. Offline-first Flutter field app and sync queue
-15. SaaS subscription billing, feature flags and platform super-admin
-16. AI farm assistant grounded in each tenant's operational data
+1. Satellite imagery / NDVI and vegetation-health overlays
+2. Barcode / QR scanner workflows for receiving, transfers, dispatch and stock counts
+3. Multi-line RFQ/quotation comparison and configurable procurement approval rules
+4. Dispatch, invoices, receivables and accounting integrations
+5. Livestock breeding genealogy, milk records and medication withdrawal periods
+6. Poultry FCR and cohort analytics
+7. Aquaculture biomass/FCR forecasting
+8. Native object/media storage for scouting photos, documents and compliance evidence
+9. Rich notification channels beyond webhooks, including email and mobile push
+10. Flutter mobile field client using the v0.4 offline-sync contract
+11. SaaS subscription billing, feature flags and platform super-admin
+12. AI farm assistant grounded in each tenant's operational data
