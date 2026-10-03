@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CloudRain, CloudSun, Droplets, History, Navigation, Wind } from "lucide-react";
+import { AlertTriangle, CloudRain, CloudSun, Droplets, History, Navigation, Wind } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
