@@ -123,13 +123,16 @@ export function OfflineFieldClient({ farms, units, cycles, tasks, activities }:{
   },[]);
 
   useEffect(()=>{
-    void refreshQueue();
-    if (navigator.onLine) void syncQueued();
+    const initialSync = window.setTimeout(() => {
+      void refreshQueue();
+      if (navigator.onLine) void syncQueued();
+    },0);
     const handleOnline = () => { setOnline(true); void syncQueued(); };
     const handleOffline = () => { setOnline(false); setMessage("Offline. New work will be queued locally."); };
     window.addEventListener("online",handleOnline);
     window.addEventListener("offline",handleOffline);
     return () => {
+      window.clearTimeout(initialSync);
       window.removeEventListener("online",handleOnline);
       window.removeEventListener("offline",handleOffline);
     };
