@@ -106,6 +106,30 @@ export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(()=>null));
   if (!parsed.success) return NextResponse.json({ ok:false, error:"Invalid sync payload", details:parsed.error.flatten() }, { status:400 });
 
+  const fingerprints = [...new Set(parsed.data.mutations.map(m=>m.deviceFingerprint).filter((value): value is string => Boolean(value)))];
+  const platform = request.headers.get("x-farmhq-platform")?.slice(0,80) || undefined;
+  const appVersion = request.headers.get("x-farmhq-app-version")?.slice(0,40) || undefined;
+  for (const fingerprint of fingerprints) {
+    await db.offlineDevice.upsert({
+      where: { tenantId_fingerprint: { tenantId: session.tenantId, fingerprint } },
+      create: {
+        tenantId: session.tenantId,
+        userId: session.userId,
+        fingerprint,
+        platform,
+        appVersion,
+        lastSeenAt: new Date(),
+      },
+      update: {
+        userId: session.userId,
+        platform,
+        appVersion,
+        active: true,
+        lastSeenAt: new Date(),
+      },
+    });
+  }
+
   const results: Array<{ clientMutationId:string; status:OfflineMutationStatus; error?:string }> = [];
 
   for (const mutation of parsed.data.mutations) {
@@ -137,6 +161,13 @@ export async function POST(request: Request) {
       await db.offlineMutation.update({ where: { id: record.id }, data: { status: OfflineMutationStatus.FAILED, error } });
       results.push({ clientMutationId: mutation.clientMutationId, status: OfflineMutationStatus.FAILED, error });
     }
+  }
+
+  if (fingerprints.length) {
+    await db.offlineDevice.updateMany({
+      where: { tenantId: session.tenantId, fingerprint: { in: fingerprints } },
+      data: { lastSyncAt: new Date(), lastSeenAt: new Date() },
+    });
   }
 
   return NextResponse.json({ ok:true, results });
