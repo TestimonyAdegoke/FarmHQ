@@ -15,7 +15,8 @@
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
     "db:postgis": "node scripts/apply-postgis.mjs",
-    "db:bootstrap": "npm run db:push && npm run db:postgis"
+    "db:bootstrap": "npm run db:push && npm run db:postgis",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
