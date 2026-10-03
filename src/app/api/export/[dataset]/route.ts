@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { datasets, toCsv } from "@/lib/exports";
-import { can } from "@/lib/permissions";
+import { isScoped, memberCan } from "@/lib/farm-scope";
 
 export const runtime = "nodejs";
 
@@ -19,10 +19,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ data
   const { dataset } = await params;
   const definition = datasets[dataset];
   if (!definition) return NextResponse.json({ error: "Unknown dataset" }, { status: 404 });
-  if (!can(membership.role, definition.permission)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!memberCan(membership, definition.permission) || (definition.organisationWide && isScoped(membership.farmScope))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const url = new URL(request.url);
   const range = { from: parseDate(url.searchParams.get("from")), to: parseDate(url.searchParams.get("to"), true) };
-  const rows = await definition.load(session.tenantId, range);
+  const rows = await definition.load(session.tenantId, range, membership.farmScope);
   const stamp = new Date().toISOString().slice(0, 10);
   return new Response(toCsv(rows), {
     headers: {

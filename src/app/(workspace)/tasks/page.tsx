@@ -18,17 +18,17 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const ctx = await tenantContext("production.view");
   const view = (await searchParams).view === "all" ? "all" : (await searchParams).view === "done" ? "done" : "mine";
   const [farms, cycles, members, tasks] = await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,status:{in:["PLANNED","ACTIVE"]}},orderBy:{name:"asc"}}),
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,status:{in:["PLANNED","ACTIVE"]},...ctx.scope.byFarm},orderBy:{name:"asc"}}),
     db.membership.findMany({where:{tenantId:ctx.tenantId},include:{user:true},orderBy:{user:{name:"asc"}}}),
-    db.task.findMany({where:{tenantId:ctx.tenantId,...(view==="mine"?{assignedToId:ctx.userId,status:{in:["TODO","IN_PROGRESS","BLOCKED"]}}:view==="done"?{status:{in:["DONE","CANCELLED"]}}:{status:{in:["TODO","IN_PROGRESS","BLOCKED"]}})},take:300,include:{farm:true,cycle:true,assignedTo:true,createdBy:true},orderBy:[{status:"asc"},{dueAt:"asc"},{createdAt:"desc"}]}),
+    db.task.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm,...(view==="mine"?{assignedToId:ctx.userId,status:{in:["TODO","IN_PROGRESS","BLOCKED"]}}:view==="done"?{status:{in:["DONE","CANCELLED"]}}:{status:{in:["TODO","IN_PROGRESS","BLOCKED"]}})},take:300,include:{farm:true,cycle:true,assignedTo:true,createdBy:true},orderBy:[{status:"asc"},{dueAt:"asc"},{createdAt:"desc"}]}),
   ]);
   return <><PageHeader eyebrow="Execution" title="Work & tasks" description="Assign, prioritize and close operational work across farms and production cycles."/>
     <FormDetails title="Create task" hint="Farm-wide, or tied to a production cycle." open={!tasks.length && view !== "done"}>
       <ActionForm action={createTaskAction} success="Task created">
         <div className="form-grid">
           <div className="field span-2"><label>Task</label><input name="title" required placeholder="Apply NPK to North Field"/></div>
-          <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">All farms</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+          <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">All farms</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
           <div className="field"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">None</option>{cycles.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <div className="field"><label>Priority</label><select name="priority" defaultValue="MEDIUM">{priorities.map(p=><option key={p} value={p}>{humanize(p)}</option>)}</select></div>
           <div className="field"><label>Due date</label><input name="dueAt" type="date"/></div>

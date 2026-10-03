@@ -17,14 +17,14 @@ const outbound = ["ISSUE","ADJUSTMENT_OUT","WASTE"];
 export default async function InventoryPage() {
   const ctx = await tenantContext("inventory.view");
   const [farms, warehouses, products, cycles, txns, positions, valuationRows] = await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.warehouse.findMany({where:{tenantId:ctx.tenantId,active:true},include:{farm:true},orderBy:{name:"asc"}}),
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.warehouse.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.byFarm},include:{farm:true},orderBy:{name:"asc"}}),
     db.product.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,status:{in:["PLANNED","ACTIVE","PAUSED"]}},orderBy:{name:"asc"}}),
-    db.inventoryTransaction.findMany({where:{tenantId:ctx.tenantId},include:{product:true,warehouse:true,cycle:true},orderBy:{occurredAt:"desc"},take:100}),
-    stockPositions(ctx.tenantId),
+    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm,status:{in:["PLANNED","ACTIVE","PAUSED"]}},orderBy:{name:"asc"}}),
+    db.inventoryTransaction.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.via("warehouse")},include:{product:true,warehouse:true,cycle:true},orderBy:{occurredAt:"desc"},take:100}),
+    stockPositions(ctx.tenantId, db, ctx.farmScope),
     // Weighted inbound cost per product, used to value what is on hand.
-    db.inventoryTransaction.groupBy({by:["productId"],where:{tenantId:ctx.tenantId,type:{in:["OPENING","PURCHASE","RECEIPT","PRODUCTION","ADJUSTMENT_IN","RETURN"]},unitCost:{not:null}},_sum:{quantity:true},_avg:{unitCost:true}}),
+    db.inventoryTransaction.groupBy({by:["productId"],where:{tenantId:ctx.tenantId,...ctx.scope.via("warehouse"),type:{in:["OPENING","PURCHASE","RECEIPT","PRODUCTION","ADJUSTMENT_IN","RETURN"]},unitCost:{not:null}},_sum:{quantity:true},_avg:{unitCost:true}}),
   ]);
   const stock = positions.byProduct;
   const avgCost = new Map(valuationRows.map(r=>[r.productId,Number(r._avg.unitCost||0)]));
@@ -76,7 +76,7 @@ export default async function InventoryPage() {
         <ActionForm action={createWarehouseAction} success="Warehouse added">
           <div className="form-grid two">
             <div className="field"><label>Name</label><input name="name" required placeholder="Central Store"/></div>
-            <div className="field"><label>Farm (optional)</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm (optional)</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
           </div>
           <div className="form-actions"><button className="button">Add warehouse</button></div>
         </ActionForm>

@@ -20,13 +20,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const [customers, farms, cycles, warehouses, products, orders, balances, collected] = await Promise.all([
     db.customer.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] } }, orderBy: { name: "asc" } }),
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] }, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.salesOrder.findMany({ where: { tenantId: ctx.tenantId }, include: { customer: true, farm: true, cycle: true, invoice: { select: { id: true, invoiceNo: true, status: true } }, items: { include: { product: true } } }, orderBy: { orderDate: "desc" }, take: 100 }),
-    customerBalances(ctx.tenantId),
-    db.paymentReceived.aggregate({ where: { tenantId: ctx.tenantId, receivedAt: { gte: monthStart } }, _sum: { amount: true } }),
+    db.salesOrder.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { customer: true, farm: true, cycle: true, invoice: { select: { id: true, invoiceNo: true, status: true } }, items: { include: { product: true } } }, orderBy: { orderDate: "desc" }, take: 100 }),
+    customerBalances(ctx.tenantId, ctx.farmScope),
+    db.paymentReceived.aggregate({ where: { tenantId: ctx.tenantId, receivedAt: { gte: monthStart }, ...ctx.scope.via("invoice") }, _sum: { amount: true } }),
   ]);
   const canManage = ctx.can("sales.manage");
   const receivable = [...balances.values()].reduce((s, b) => s + b.outstanding, 0);
@@ -49,7 +49,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <div className="form-grid two">
             <div className="field"><label>Customer</label><select name="customerId" required defaultValue=""><option value="" disabled>Select customer</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div className="field"><label>Deliver from store</label><select name="warehouseId" defaultValue=""><option value="">No stock movement</option>{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">Not linked</option>{cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div className="field"><label>Order date</label><input name="orderDate" type="date" /></div>
             <div className="field"><label>Delivery date</label><input name="deliveryDate" type="date" /></div>

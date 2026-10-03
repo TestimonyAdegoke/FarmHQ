@@ -14,8 +14,8 @@ const unitTypes = ["FIELD","PLOT","GREENHOUSE","ORCHARD","BARN","PEN","POULTRY_H
 export default async function FieldsPage() {
   const ctx = await tenantContext("farm.view");
   const [farms, units] = await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionUnit.findMany({where:{tenantId:ctx.tenantId},include:{farm:true,_count:{select:{cycles:true}}},orderBy:[{farm:{name:"asc"}},{name:"asc"}]})
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.productionUnit.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{farm:true,_count:{select:{cycles:true}}},orderBy:[{farm:{name:"asc"}},{name:"asc"}]})
   ]);
   return <><PageHeader eyebrow="Operations" title="Fields & production units" description="The places where production happens: fields, greenhouses, barns, pens, ponds and more."/>
     <FormDetails title="Add production unit" hint={farms.length ? "Every unit belongs to a farm." : "Add a farm first."} open={!units.length}>

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ActivityStatus, CycleType, OfflineMutationStatus, OfflineMutationType, ObservationSeverity, TaskStatus, TimesheetStatus, type Prisma, type Role } from "@/generated/prisma/client";
+import { ActivityStatus, CycleType, OfflineMutationStatus, OfflineMutationType, ObservationSeverity, TaskStatus, TimesheetStatus, type Prisma } from "@/generated/prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { attendanceCost } from "@/lib/labour";
-import { can, type Permission } from "@/lib/permissions";
+import { assertFarmAccess, farmWhere, memberCan, type ScopedMember } from "@/lib/farm-scope";
+import type { Permission } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 
@@ -73,12 +74,13 @@ const required: Record<OfflineMutationType, Permission[]> = {
   ATTENDANCE: ["workforce.manage", "workforce.attendance"],
 };
 
-async function processMutation(tenantId: string, role: Role, mutation: z.infer<typeof mutationSchema>) {
-  if (!required[mutation.type].some(permission => can(role, permission))) throw new Error("Your role does not allow this record type");
+async function processMutation(tenantId: string, member: ScopedMember, mutation: z.infer<typeof mutationSchema>) {
+  if (!required[mutation.type].some(permission => memberCan(member, permission))) throw new Error("Your role does not allow this record type");
+  const scope = member.farmScope;
 
   if (mutation.type === OfflineMutationType.POULTRY_DAILY_RECORD) {
     const payload = poultrySchema.parse(mutation.payload);
-    const cycle = await db.productionCycle.findFirst({ where: { id: payload.cycleId, tenantId, type: CycleType.POULTRY }, select: { id: true } });
+    const cycle = await db.productionCycle.findFirst({ where: { id: payload.cycleId, tenantId, type: CycleType.POULTRY, ...farmWhere(scope) }, select: { id: true } });
     if (!cycle) throw new Error("Poultry cycle not found");
     const recordDate = new Date(`${payload.recordDate}T12:00:00`);
     const { cycleId } = payload;
@@ -94,12 +96,13 @@ async function processMutation(tenantId: string, role: Role, mutation: z.infer<t
 
   if (mutation.type === OfflineMutationType.ATTENDANCE) {
     const payload = attendanceSchema.parse(mutation.payload);
+    if (payload.farmId) assertFarmAccess(scope, payload.farmId);
     if (payload.farmId && !(await db.farm.findFirst({ where: { id: payload.farmId, tenantId }, select: { id: true } }))) throw new Error("Farm not found");
-    if (payload.cycleId && !(await db.productionCycle.findFirst({ where: { id: payload.cycleId, tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
-    const workers = await db.workforceMember.findMany({ where: { tenantId, id: { in: payload.workers.map(w => w.workerId) } } });
+    if (payload.cycleId && !(await db.productionCycle.findFirst({ where: { id: payload.cycleId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Production cycle not found");
+    const workers = await db.workforceMember.findMany({ where: { tenantId, id: { in: payload.workers.map(w => w.workerId) }, ...farmWhere(scope) } });
     const byId = new Map(workers.map(w => [w.id, w]));
     const workDate = new Date(`${payload.workDate}T12:00:00`);
-    const status = can(role, "workforce.manage") ? TimesheetStatus.APPROVED : TimesheetStatus.SUBMITTED;
+    const status = memberCan(member, "workforce.manage") ? TimesheetStatus.APPROVED : TimesheetStatus.SUBMITTED;
     await db.$transaction(async tx => {
       for (const entry of payload.workers) {
         const worker = byId.get(entry.workerId);
@@ -113,6 +116,7 @@ async function processMutation(tenantId: string, role: Role, mutation: z.infer<t
 
   if (mutation.type === OfflineMutationType.SCOUTING_OBSERVATION) {
     const payload = scoutingSchema.parse(mutation.payload);
+    assertFarmAccess(scope, payload.farmId);
     const [farm, unit, cycle] = await Promise.all([
       db.farm.findFirst({ where: { id: payload.farmId, tenantId }, select: { id: true } }),
       payload.unitId ? db.productionUnit.findFirst({ where: { id: payload.unitId, tenantId, farmId: payload.farmId }, select: { id: true } }) : Promise.resolve(null),
@@ -140,7 +144,7 @@ async function processMutation(tenantId: string, role: Role, mutation: z.infer<t
 
   if (mutation.type === OfflineMutationType.TASK_STATUS) {
     const payload = taskStatusSchema.parse(mutation.payload);
-    const task = await db.task.findFirst({ where: { id: payload.taskId, tenantId }, select: { id: true } });
+    const task = await db.task.findFirst({ where: { id: payload.taskId, tenantId, ...farmWhere(scope) }, select: { id: true } });
     if (!task) throw new Error("Task not found");
     await db.task.update({
       where: { id: task.id },
@@ -154,7 +158,7 @@ async function processMutation(tenantId: string, role: Role, mutation: z.infer<t
 
   if (mutation.type === OfflineMutationType.CROP_ACTIVITY_STATUS) {
     const payload = activityStatusSchema.parse(mutation.payload);
-    const activity = await db.cropActivity.findFirst({ where: { id: payload.activityId, tenantId }, select: { id: true } });
+    const activity = await db.cropActivity.findFirst({ where: { id: payload.activityId, tenantId, ...farmWhere(scope) }, select: { id: true } });
     if (!activity) throw new Error("Crop activity not found");
     await db.cropActivity.update({
       where: { id: activity.id },
@@ -169,7 +173,7 @@ async function processMutation(tenantId: string, role: Role, mutation: z.infer<t
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok:false, error:"Unauthorized" }, { status:401 });
-  const membership = await db.membership.findUnique({ where: { tenantId_userId: { tenantId: session.tenantId, userId: session.userId } }, select: { id: true, role: true } });
+  const membership = await db.membership.findUnique({ where: { tenantId_userId: { tenantId: session.tenantId, userId: session.userId } }, select: { id: true, role: true, farmScope: true } });
   if (!membership) return NextResponse.json({ ok:false, error:"Unauthorized" }, { status:401 });
 
   const parsed = bodySchema.safeParse(await request.json().catch(()=>null));
@@ -222,7 +226,7 @@ export async function POST(request: Request) {
     });
 
     try {
-      await processMutation(session.tenantId, membership.role, mutation);
+      await processMutation(session.tenantId, membership, mutation);
       await db.offlineMutation.update({ where: { id: record.id }, data: { status: OfflineMutationStatus.PROCESSED, processedAt: new Date() } });
       results.push({ clientMutationId: mutation.clientMutationId, status: OfflineMutationStatus.PROCESSED });
     } catch (caught) {

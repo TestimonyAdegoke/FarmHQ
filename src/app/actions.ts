@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Role, FarmType, UnitType, CycleType, CycleStatus, TaskPriority, TaskStatus, ExpenseStatus, EquipmentStatus, CropActivityType, ActivityStatus, ObservationSeverity, ProcurementStatus, PurchaseOrderStatus, LivestockEventType, RevenueType, EmploymentType, PayBasis, PaymentMethod, TimesheetStatus, EquipmentLogType } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { audit, clearSession, createSession, requireSession } from "@/lib/auth";
-import { can } from "@/lib/permissions";
+import { assertFarmAccess, farmWhere, isScoped, memberCan, resolveFarmId } from "@/lib/farm-scope";
 import { normalizePhone, slugify } from "@/lib/utils";
 import { attempt, fail } from "@/lib/forms";
 import { stockPositions } from "@/lib/ledger";
@@ -120,7 +120,8 @@ export async function switchTenantAction(form: FormData) {
 
 async function createFarmActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage")) throw new Error("Forbidden");
+  if (isScoped(membership.farmScope)) fail("Only members with access to all farms can add a farm.");
   const name = z.string().min(2).parse(text(form, "name"));
   const farm = await db.farm.create({
     data: {
@@ -141,8 +142,9 @@ async function createFarmActionImpl(form: FormData) {
 
 async function createUnitActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "farm.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
+  assertFarmAccess(membership.farmScope, farmId);
   const farm = await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } });
   if (!farm) throw new Error("Farm not found");
   const unit = await db.productionUnit.create({
@@ -162,9 +164,10 @@ async function createUnitActionImpl(form: FormData) {
 
 async function createCycleActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
   const unitId = optional(form, "unitId");
+  assertFarmAccess(membership.farmScope, farmId);
   const farm = await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } });
   if (!farm) throw new Error("Farm not found");
   if (unitId && !(await db.productionUnit.findFirst({ where: { id: unitId, farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production unit not found");
@@ -193,11 +196,12 @@ async function createCycleActionImpl(form: FormData) {
 
 async function createTaskActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "task.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "task.manage")) throw new Error("Forbidden");
+  const scope = membership.farmScope;
+  const farmId = resolveFarmId(scope, optional(form, "farmId"));
   const cycleId = optional(form, "cycleId");
   if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
-  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Cycle not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Cycle not found");
   const task = await db.task.create({
     data: {
       tenantId: session.tenantId,
@@ -218,10 +222,10 @@ async function createTaskActionImpl(form: FormData) {
 
 async function updateTaskStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "task.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "task.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(TaskStatus).parse(text(form, "status"));
-  const existing = await db.task.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const existing = await db.task.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } });
   if (!existing) throw new Error("Task not found");
   await db.task.update({ where: { id }, data: { status, completedAt: status === TaskStatus.DONE ? new Date() : null } });
   await audit("task.status", "Task", id, { status });
@@ -231,9 +235,11 @@ async function updateTaskStatusActionImpl(form: FormData) {
 
 async function createWarehouseActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const warehouse = await db.warehouse.create({
-    data: { tenantId: session.tenantId, name: z.string().min(2).parse(text(form, "name")), farmId: optional(form, "farmId") },
+    data: { tenantId: session.tenantId, name: z.string().min(2).parse(text(form, "name")), farmId },
   });
   await audit("warehouse.create", "Warehouse", warehouse.id, { name: warehouse.name });
   revalidatePath("/inventory");
@@ -241,7 +247,7 @@ async function createWarehouseActionImpl(form: FormData) {
 
 async function createProductActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const product = await db.product.create({
     data: {
       tenantId: session.tenantId,
@@ -260,14 +266,15 @@ async function createProductActionImpl(form: FormData) {
 
 async function postInventoryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
   const productId = text(form, "productId");
   const cycleId = optional(form, "cycleId");
+  const scope = membership.farmScope;
   const [warehouse, product, cycle] = await Promise.all([
-    db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId }, select: { id: true } }),
+    db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }),
     db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true } }),
-    cycleId ? db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
+    cycleId ? db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve({ id: "" }),
   ]);
   if (!warehouse || !product || (cycleId && !cycle)) throw new Error("Invalid warehouse, product or production cycle");
   const type = text(form, "type") as "RECEIPT" | "ISSUE" | "ADJUSTMENT_IN" | "ADJUSTMENT_OUT";
@@ -291,15 +298,20 @@ async function postInventoryActionImpl(form: FormData) {
 
 async function createExpenseActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "finance.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "finance.manage")) throw new Error("Forbidden");
   const status = (optional(form, "status") as ExpenseStatus) || ExpenseStatus.APPROVED;
   const accountId = status === ExpenseStatus.PAID ? optional(form, "accountId") : undefined;
   if (accountId && !(await db.moneyAccount.findFirst({ where: { id: accountId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Payment account not found");
+  const scope = membership.farmScope;
+  const farmId = resolveFarmId(scope, optional(form, "farmId"));
+  const cycleId = optional(form, "cycleId");
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Production cycle not found");
   const expense = await db.expense.create({
     data: {
       tenantId: session.tenantId,
-      farmId: optional(form, "farmId"),
-      cycleId: optional(form, "cycleId"),
+      farmId,
+      cycleId,
       category: z.string().min(2).parse(text(form, "category")),
       description: z.string().min(2).parse(text(form, "description")),
       amount: z.number().positive().parse(numberValue(form, "amount")),
@@ -319,12 +331,15 @@ async function createExpenseActionImpl(form: FormData) {
 
 async function createAnimalActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "livestock.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
+  const unitId = optional(form, "unitId");
+  assertFarmAccess(membership.farmScope, farmId);
   if (!(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
+  if (unitId && !(await db.productionUnit.findFirst({ where: { id: unitId, farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production unit not found");
   const animal = await db.animal.create({
     data: {
-      tenantId: session.tenantId, farmId, unitId: optional(form, "unitId"),
+      tenantId: session.tenantId, farmId, unitId,
       tag: z.string().min(1).parse(text(form, "tag")), species: z.string().min(2).parse(text(form, "species")),
       breed: optional(form, "breed"), sex: optional(form, "sex"), birthDate: dateValue(form, "birthDate"), notes: optional(form, "notes"),
     },
@@ -335,11 +350,13 @@ async function createAnimalActionImpl(form: FormData) {
 
 async function createEquipmentActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "equipment.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "equipment.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const equipment = await db.equipment.create({
     data: {
       tenantId: session.tenantId,
-      farmId: optional(form, "farmId"),
+      farmId,
       name: z.string().min(2).parse(text(form, "name")),
       code: optional(form, "code"),
       category: z.string().min(2).parse(text(form, "category")),
@@ -357,7 +374,7 @@ async function createEquipmentActionImpl(form: FormData) {
 
 async function createInvitationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "team.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "team.manage")) throw new Error("Forbidden");
   const email = z.string().email().parse(text(form, "email").toLowerCase());
   const role = z.nativeEnum(Role).parse(text(form, "role"));
   const token = randomBytes(24).toString("hex");
@@ -370,7 +387,7 @@ async function createInvitationActionImpl(form: FormData) {
 
 async function updateTenantActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "tenant.manage")) throw new Error("Forbidden");
   const name = z.string().min(2).parse(text(form, "name"));
   const currency = z.string().length(3).parse(text(form, "currency").toUpperCase());
   const timezone = z.string().min(2).parse(text(form, "timezone"));
@@ -382,10 +399,10 @@ async function updateTenantActionImpl(form: FormData) {
 
 async function createCropActivityActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
   const cycle = await db.productionCycle.findFirst({
-    where: { id: cycleId, tenantId: session.tenantId, type: CycleType.CROP },
+    where: { id: cycleId, tenantId: session.tenantId, type: CycleType.CROP, ...farmWhere(membership.farmScope) },
     select: { id: true, farmId: true, unitId: true },
   });
   if (!cycle) throw new Error("Crop production cycle not found");
@@ -414,10 +431,10 @@ async function createCropActivityActionImpl(form: FormData) {
 
 async function updateCropActivityStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(ActivityStatus).parse(text(form, "status"));
-  const activity = await db.cropActivity.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const activity = await db.cropActivity.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } });
   if (!activity) throw new Error("Activity not found");
   await db.cropActivity.update({ where: { id }, data: { status, completedAt: status === ActivityStatus.COMPLETED ? new Date() : null } });
   await audit("crop.activity.status", "CropActivity", id, { status });
@@ -426,10 +443,11 @@ async function updateCropActivityStatusActionImpl(form: FormData) {
 
 async function createScoutingObservationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
   const unitId = optional(form, "unitId");
   const cycleId = optional(form, "cycleId");
+  assertFarmAccess(membership.farmScope, farmId);
   if (!(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   if (unitId && !(await db.productionUnit.findFirst({ where: { id: unitId, farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production unit not found");
   if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
@@ -457,9 +475,9 @@ async function createScoutingObservationActionImpl(form: FormData) {
 
 async function resolveScoutingObservationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
-  const observation = await db.scoutingObservation.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const observation = await db.scoutingObservation.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } });
   if (!observation) throw new Error("Observation not found");
   await db.scoutingObservation.update({ where: { id }, data: { resolvedAt: new Date() } });
   await audit("scouting.resolve", "ScoutingObservation", id);
@@ -469,9 +487,9 @@ async function resolveScoutingObservationActionImpl(form: FormData) {
 
 async function createHarvestRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "production.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
-  const cycle = await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true, farmId: true, unitId: true } });
+  const cycle = await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true, farmId: true, unitId: true } });
   if (!cycle) throw new Error("Production cycle not found");
   const quantity = z.number().positive().parse(numberValue(form, "quantity"));
   const unit = z.string().min(1).parse(text(form, "unit"));
@@ -497,7 +515,7 @@ async function createHarvestRecordActionImpl(form: FormData) {
     });
     if (warehouseId && productId) {
       const [warehouse, product] = await Promise.all([
-        tx.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId }, select: { id: true } }),
+        tx.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }),
         tx.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true, standardCost: true } }),
       ]);
       if (!warehouse || !product) throw new Error("Invalid output warehouse or product");
@@ -526,11 +544,12 @@ async function createHarvestRecordActionImpl(form: FormData) {
 
 async function createRevenueActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "finance.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "finance.manage")) throw new Error("Forbidden");
+  const scope = membership.farmScope;
+  const farmId = resolveFarmId(scope, optional(form, "farmId"));
   const cycleId = optional(form, "cycleId");
   if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
-  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Production cycle not found");
   const revenue = await db.revenue.create({
     data: {
       tenantId: session.tenantId,
@@ -552,7 +571,7 @@ async function createRevenueActionImpl(form: FormData) {
 
 async function createVendorActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "procurement.manage")) throw new Error("Forbidden");
   const vendor = await db.vendor.create({
     data: {
       tenantId: session.tenantId,
@@ -568,8 +587,8 @@ async function createVendorActionImpl(form: FormData) {
 
 async function createPurchaseRequestActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "procurement.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
   const productId = optional(form, "productId");
   if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   if (productId && !(await db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Product not found");
@@ -602,10 +621,10 @@ async function createPurchaseRequestActionImpl(form: FormData) {
 
 async function updatePurchaseRequestStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "procurement.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(ProcurementStatus).parse(text(form, "status"));
-  const request = await db.purchaseRequest.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const request = await db.purchaseRequest.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } });
   if (!request) throw new Error("Purchase request not found");
   await db.purchaseRequest.update({ where: { id }, data: { status, approvedAt: status === ProcurementStatus.APPROVED ? new Date() : undefined } });
   await audit("purchase_request.status", "PurchaseRequest", id, { status });
@@ -614,17 +633,18 @@ async function updatePurchaseRequestStatusActionImpl(form: FormData) {
 
 async function createPurchaseOrderActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "procurement.manage")) throw new Error("Forbidden");
   const vendorId = text(form, "vendorId");
-  const farmId = optional(form, "farmId");
+  const scope = membership.farmScope;
+  const farmId = resolveFarmId(scope, optional(form, "farmId"));
   const requestId = optional(form, "requestId");
   const warehouseId = optional(form, "warehouseId");
   const productId = optional(form, "productId");
   const [vendor, farm, request, warehouse, product] = await Promise.all([
     db.vendor.findFirst({ where: { id: vendorId, tenantId: session.tenantId }, select: { id: true } }),
     farmId ? db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-    requestId ? db.purchaseRequest.findFirst({ where: { id: requestId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-    warehouseId ? db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
+    requestId ? db.purchaseRequest.findFirst({ where: { id: requestId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve({ id: "" }),
+    warehouseId ? db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve({ id: "" }),
     productId ? db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
   ]);
   if (!vendor || (farmId && !farm) || (requestId && !request) || (warehouseId && !warehouse) || (productId && !product)) throw new Error("Invalid procurement reference");
@@ -661,10 +681,10 @@ async function createPurchaseOrderActionImpl(form: FormData) {
 
 async function receivePurchaseOrderActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "procurement.manage") || !can(membership.role, "inventory.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "procurement.manage") || !memberCan(membership, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const po = await db.purchaseOrder.findFirst({
-    where: { id, tenantId: session.tenantId },
+    where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) },
     include: { items: true },
   });
   if (!po || !po.warehouseId) throw new Error("Purchase order or destination warehouse not found");
@@ -697,9 +717,9 @@ async function receivePurchaseOrderActionImpl(form: FormData) {
 
 async function createAnimalHealthEventActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "livestock.manage")) throw new Error("Forbidden");
   const animalId = text(form, "animalId");
-  if (!(await db.animal.findFirst({ where: { id: animalId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Animal not found");
+  if (!(await db.animal.findFirst({ where: { id: animalId, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Animal not found");
   const event = await db.animalHealthEvent.create({
     data: {
       tenantId: session.tenantId,
@@ -721,9 +741,9 @@ async function createAnimalHealthEventActionImpl(form: FormData) {
 
 async function createPoultryDailyRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "livestock.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
-  if (!(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, type: CycleType.POULTRY }, select: { id: true } }))) throw new Error("Poultry cycle not found");
+  if (!(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, type: CycleType.POULTRY, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Poultry cycle not found");
   const record = await db.poultryDailyRecord.create({
     data: {
       tenantId: session.tenantId,
@@ -745,9 +765,9 @@ async function createPoultryDailyRecordActionImpl(form: FormData) {
 
 async function createAquacultureRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "livestock.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
-  if (!(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, type: CycleType.AQUACULTURE }, select: { id: true } }))) throw new Error("Aquaculture cycle not found");
+  if (!(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, type: CycleType.AQUACULTURE, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Aquaculture cycle not found");
   const record = await db.aquacultureRecord.create({
     data: {
       tenantId: session.tenantId,
@@ -769,8 +789,8 @@ async function createAquacultureRecordActionImpl(form: FormData) {
 
 async function createWorkforceMemberActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
-  const farmId = optional(form, "farmId");
+  if (!memberCan(membership, "workforce.manage")) throw new Error("Forbidden");
+  const farmId = resolveFarmId(membership.farmScope, optional(form, "farmId"));
   if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const worker = await db.workforceMember.create({
     data: {
@@ -798,13 +818,15 @@ async function createWorkforceMemberActionImpl(form: FormData) {
 
 async function createTimesheetActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "workforce.manage")) throw new Error("Forbidden");
   const workerId = text(form, "workerId");
-  const worker = await db.workforceMember.findFirst({ where: { id: workerId, tenantId: session.tenantId }, select: { id: true, defaultHourlyRate: true, farmId: true, payBasis: true, dailyRate: true, pieceRate: true } });
+  const scope = membership.farmScope;
+  const worker = await db.workforceMember.findFirst({ where: { id: workerId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true, defaultHourlyRate: true, farmId: true, payBasis: true, dailyRate: true, pieceRate: true } });
   if (!worker) throw new Error("Worker not found");
-  const farmId = optional(form, "farmId") || worker.farmId || undefined;
+  const farmId = resolveFarmId(scope, optional(form, "farmId") || worker.farmId);
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const cycleId = optional(form, "cycleId");
-  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Production cycle not found");
   const hourlyRate = numberValue(form, "hourlyRate") ?? Number(worker.defaultHourlyRate || 0);
   const pieceQuantity = numberValue(form, "pieceQuantity");
   // Daily-rated and piece-rate workers are costed by the day / unit rather than by the hour.
@@ -834,10 +856,10 @@ async function createTimesheetActionImpl(form: FormData) {
 
 async function updateTimesheetStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "workforce.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
   const status = z.nativeEnum(TimesheetStatus).parse(text(form, "status"));
-  if (!(await db.timesheet.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Timesheet not found");
+  if (!(await db.timesheet.findFirst({ where: { id, tenantId: session.tenantId, ...farmWhere(membership.farmScope) }, select: { id: true } }))) throw new Error("Timesheet not found");
   await db.timesheet.update({ where: { id }, data: { status } });
   await audit("timesheet.status", "Timesheet", id, { status });
   revalidatePath("/workforce");
@@ -846,13 +868,15 @@ async function updateTimesheetStatusActionImpl(form: FormData) {
 
 async function createEquipmentLogActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
-  if (!can(membership.role, "equipment.manage")) throw new Error("Forbidden");
+  if (!memberCan(membership, "equipment.manage")) throw new Error("Forbidden");
   const equipmentId = text(form, "equipmentId");
-  const equipment = await db.equipment.findFirst({ where: { id: equipmentId, tenantId: session.tenantId }, select: { id: true, farmId: true } });
+  const scope = membership.farmScope;
+  const equipment = await db.equipment.findFirst({ where: { id: equipmentId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true, farmId: true } });
   if (!equipment) throw new Error("Equipment not found");
-  const farmId = optional(form, "farmId") || equipment.farmId || undefined;
+  const farmId = resolveFarmId(scope, optional(form, "farmId") || equipment.farmId);
+  if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Farm not found");
   const cycleId = optional(form, "cycleId");
-  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
+  if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId, ...farmWhere(scope) }, select: { id: true } }))) throw new Error("Production cycle not found");
   const meterReading = numberValue(form, "meterReading");
   const log = await db.$transaction(async (tx) => {
     const created = await tx.equipmentLog.create({

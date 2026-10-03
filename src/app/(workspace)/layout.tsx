@@ -6,17 +6,19 @@ import { ConnectionBanner } from "@/components/connection-banner";
 import { requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { visibleNavGroups } from "@/lib/navigation";
-import { can } from "@/lib/permissions";
 import { humanize } from "@/lib/utils";
 import { Crumbs } from "@/components/crumbs";
+import { isScoped, memberCan } from "@/lib/farm-scope";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireSession();
+  const scoped = isScoped(membership.farmScope);
   const [memberships, unread] = await Promise.all([
     db.membership.findMany({ where: { userId: session.userId }, include: { tenant: { select: { name: true } } }, orderBy: { createdAt: "asc" } }),
-    db.notification.count({ where: { tenantId: session.tenantId, readAt: null } }),
+    // Alerts are organisation-wide, so farm-scoped members do not see them.
+    scoped ? Promise.resolve(0) : db.notification.count({ where: { tenantId: session.tenantId, readAt: null } }),
   ]);
-  const groups = visibleNavGroups(permission => can(membership.role, permission));
+  const groups = visibleNavGroups(permission => memberCan(membership, permission), scoped);
   return <div className="workspace">
     <Sidebar
       userName={membership.user.name}
@@ -38,6 +40,6 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
       <ConnectionBanner />
       <div className="content">{children}</div>
     </main>
-    <MobileNav canSell={can(membership.role, "sales.manage")} />
+    <MobileNav canSell={memberCan(membership, "sales.manage")} />
   </div>;
 }

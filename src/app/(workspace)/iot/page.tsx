@@ -14,10 +14,10 @@ export const metadata = { title: "IoT & Sensors" };
 export default async function IotPage() {
   const ctx = await tenantContext("farm.view");
   const [farms, units, devices, readings] = await Promise.all([
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.iotDevice.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: "desc" } }),
-    db.sensorReading.findMany({ where: { tenantId: ctx.tenantId }, include: { device: true }, orderBy: { recordedAt: "desc" }, take: 150 }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
+    db.iotDevice.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, orderBy: { createdAt: "desc" } }),
+    db.sensorReading.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("device") }, include: { device: true }, orderBy: { recordedAt: "desc" }, take: 150 }),
   ]);
 
   const farmNames = new Map(farms.map(f=>[f.id,f.name]));

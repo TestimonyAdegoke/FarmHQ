@@ -17,7 +17,7 @@ const severities = ["INFO", "WARNING", "CRITICAL"] as const;
 const severityTone = (severity: string) => severity === "CRITICAL" ? "danger" : severity === "WARNING" ? "warn" : "neutral";
 
 export default async function AutomationsPage() {
-  const ctx=await tenantContext("farm.view");
+  const ctx=await tenantContext("farm.view", { organisationWide: true });
   const [rules,notifications]=await Promise.all([
     db.automationRule.findMany({where:{tenantId:ctx.tenantId},orderBy:{createdAt:"desc"}}),
     db.notification.findMany({where:{tenantId:ctx.tenantId},orderBy:{createdAt:"desc"},take:150}),

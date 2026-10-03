@@ -193,3 +193,12 @@ a.alert:hover b { text-decoration:underline; text-underline-offset:3px; }
 @media (min-width:1101px) {
   .grid-2 table, .grid-main-side table, .drawers table { min-width:0; }
 }
+
+/* Per-member farm access editor (Team & Access). */
+.farm-scope summary { cursor:pointer; list-style:none; }
+.farm-scope summary::-webkit-details-marker { display:none; }
+.farm-scope[open] summary { margin-bottom:8px; }
+.farm-scope .form-actions { margin-top:8px; }
+.farm-scope-list { display:grid; gap:6px; margin-bottom:6px; min-width:200px; }
+.farm-scope-list label { display:flex; gap:8px; align-items:center; font-weight:500; }
+.farm-scope-list input[type="checkbox"] { width:18px; height:18px; }

@@ -1,6 +1,6 @@
 import { KeyRound, MessageCircle, Plus, Shield, Users } from "lucide-react";
 import { createInvitationAction } from "@/app/actions";
-import { changeMemberRoleAction, createPasswordResetLinkAction, removeMemberAction, revokeInvitationAction } from "@/app/people-actions";
+import { changeMemberRoleAction, createPasswordResetLinkAction, removeMemberAction, revokeInvitationAction, updateMemberFarmScopeAction } from "@/app/people-actions";
 import { ActionForm } from "@/components/action-form";
 import { EmptyState } from "@/components/empty-state";
 import { FormDetails } from "@/components/form-details";
@@ -32,11 +32,13 @@ const roles: [string, string][] = [
 
 export default async function TeamPage() {
   const ctx = await tenantContext("team.manage");
-  const [members, invites, origin] = await Promise.all([
+  const [members, invites, origin, farms] = await Promise.all([
     db.membership.findMany({ where: { tenantId: ctx.tenantId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
     db.invitation.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: "desc" }, take: 50 }),
     appOrigin(),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, name: true, active: true }, orderBy: { name: "asc" } }),
   ]);
+  const farmNames = new Map(farms.map(f => [f.id, f.name]));
   const isOwner = ctx.role === "OWNER";
   const assignable = roles.filter(([r]) => r !== "OWNER" || isOwner);
   const pending = invites.filter(i => i.status === "PENDING" && i.expiresAt > new Date());
@@ -60,12 +62,27 @@ export default async function TeamPage() {
       </ActionForm>
     </FormDetails>
 
-    <div className="card"><div className="card-head"><div><h2>Members</h2><div className="card-sub">People who can sign in, and what they can do</div></div></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Joined</th><th>Manage</th></tr></thead><tbody>{members.map(m => {
+    <div className="card"><div className="card-head"><div><h2>Members</h2><div className="card-sub">People who can sign in, and what they can do</div></div></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Farm access</th><th>Joined</th><th>Manage</th></tr></thead><tbody>{members.map(m => {
       const self = m.userId === ctx.userId;
       const locked = m.role === "OWNER" && !isOwner;
       return <tr key={m.id}>
-        <td><b>{m.user.name}</b>{self ? <span className="status neutral" style={{ marginLeft: 6 }}>You</span> : null}<div className="sub">{m.user.email}{m.user.phone ? ` · ${m.user.phone}` : ""}</div></td>
+        <td><b>{m.user.name}</b>{self ? <> <span className="status neutral">You</span></> : null}<div className="sub">{m.user.email}{m.user.phone ? ` · ${m.user.phone}` : ""}</div></td>
         <td>{locked || self ? <span className="status neutral">{humanize(m.role)}</span> : <ActionForm action={changeMemberRoleAction} reset={false}><input type="hidden" name="id" value={m.id} /><div className="inline-actions"><select name="role" defaultValue={m.role} aria-label={`Role for ${m.user.name}`}>{assignable.map(([r]) => <option key={r} value={r}>{humanize(r)}</option>)}</select><button className="button secondary small">Save</button></div></ActionForm>}</td>
+        <td>{(() => {
+          const scoped = m.farmScope.filter(id => farmNames.has(id));
+          const summary = scoped.length ? scoped.map(id => farmNames.get(id)).join(", ") : "All farms";
+          // Owners always see every farm; nobody edits their own access.
+          if (locked || self || m.role === "OWNER" || !farms.length) return <span className={`status ${scoped.length ? "info" : "neutral"}`}>{summary}</span>;
+          return <details className="farm-scope">
+            <summary><span className={`status ${scoped.length ? "info" : "neutral"}`}>{summary}</span></summary>
+            <ActionForm action={updateMemberFarmScopeAction} reset={false}>
+              <input type="hidden" name="id" value={m.id} />
+              <div className="farm-scope-list">{farms.map(f => <label key={f.id}><input type="checkbox" name="farmIds" value={f.id} defaultChecked={scoped.includes(f.id)} />{f.name}{f.active ? "" : " (archived)"}</label>)}</div>
+              <small className="muted">Leave all unticked for access to every farm. Limited members cannot see organization-wide records, cash &amp; bank, payroll or settings.</small>
+              <div className="form-actions"><button className="button secondary small">Save farm access</button></div>
+            </ActionForm>
+          </details>;
+        })()}</td>
         <td>{safeDate(m.createdAt)}</td>
         <td>{!locked && !self ? <div className="inline-actions">
           <ActionForm action={createPasswordResetLinkAction}><input type="hidden" name="id" value={m.id} /><button className="button secondary small">Reset password link</button></ActionForm>

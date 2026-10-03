@@ -24,7 +24,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const filter = filters.some(([k]) => k === params.status) ? params.status! : "open";
   const q = (params.q || "").trim();
   const now = new Date();
-  const where: Prisma.InvoiceWhereInput = { tenantId: ctx.tenantId };
+  const where: Prisma.InvoiceWhereInput = { tenantId: ctx.tenantId, ...ctx.scope.byFarm };
   if (filter === "open") where.status = { in: ["ISSUED", "PARTIALLY_PAID"] };
   if (filter === "overdue") Object.assign(where, { status: { in: ["ISSUED", "PARTIALLY_PAID"] }, dueDate: { lt: now } });
   if (filter === "paid") where.status = "PAID";
@@ -32,11 +32,11 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   if (q) where.OR = [{ invoiceNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }];
   const [invoices, openAgg, customers, products, farms, cycles] = await Promise.all([
     db.invoice.findMany({ where, include: { customer: true }, orderBy: [{ issueDate: "desc" }, { invoiceNo: "desc" }], take: 200 }),
-    db.invoice.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] } }, select: { total: true, amountPaid: true, dueDate: true, status: true } }),
+    db.invoice.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...ctx.scope.byFarm }, select: { total: true, amountPaid: true, dueDate: true, status: true } }),
     db.customer.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] } }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] }, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
   ]);
   const money = (n: number | string | { toString(): string }) => formatMoney(n, ctx.tenant.currency);
   const outstanding = openAgg.reduce((s, i) => s + invoiceBalance(i), 0);
@@ -66,7 +66,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
           <div className="field"><label>Invoice date</label><input name="issueDate" type="date" /></div>
           <div className="field"><label>Due date</label><input name="dueDate" type="date" /></div>
           <div className="field"><label>Income type</label><select name="revenueType" defaultValue="HARVEST_SALE">{revenueTypes.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-          <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+          <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
           <div className="field span-2"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">Not linked</option>{cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <div className="field span-2"><label>Notes / payment instructions</label><input name="notes" placeholder="Bank / mobile money details shown on the invoice" /></div>
         </div>

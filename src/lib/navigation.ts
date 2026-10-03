@@ -1,6 +1,6 @@
 import type { Permission } from "@/lib/permissions";
 
-export type NavItem = { href: string; label: string; icon: string; permission: Permission; hint?: string };
+export type NavItem = { href: string; label: string; icon: string; permission: Permission; hint?: string; organisationWide?: boolean };
 export type NavGroup = { label: string; items: NavItem[] };
 
 // Icons are referenced by name so this module can be shared by server and client components.
@@ -35,25 +35,26 @@ export const navGroups: NavGroup[] = [
   ] },
   { label: "Money", items: [
     { href: "/finance", label: "Expenses & Income", icon: "DollarSign", permission: "finance.view" },
-    { href: "/accounts", label: "Cash & Bank", icon: "Landmark", permission: "finance.view", hint: "Cash, bank and mobile money" },
+    { href: "/accounts", label: "Cash & Bank", icon: "Landmark", permission: "finance.view", hint: "Cash, bank and mobile money", organisationWide: true },
     { href: "/profitability", label: "Profitability", icon: "TrendingUp", permission: "finance.view" },
     { href: "/reports", label: "Reports & Export", icon: "FileSpreadsheet", permission: "analytics.view" },
     { href: "/analytics", label: "Analytics", icon: "Boxes", permission: "analytics.view" },
   ] },
   { label: "People", items: [
     { href: "/workforce", label: "Workers & Attendance", icon: "HardHat", permission: "workforce.view" },
-    { href: "/payroll", label: "Payroll", icon: "Banknote", permission: "workforce.view" },
+    { href: "/payroll", label: "Payroll", icon: "Banknote", permission: "workforce.view", organisationWide: true },
     { href: "/team", label: "Team & Access", icon: "Users", permission: "team.manage" },
   ] },
   { label: "Control", items: [
     { href: "/compliance", label: "Compliance", icon: "FileCheck2", permission: "production.view" },
     { href: "/iot", label: "IoT & Sensors", icon: "RadioTower", permission: "farm.view" },
-    { href: "/automations", label: "Alerts & Automations", icon: "BellRing", permission: "farm.view" },
+    { href: "/automations", label: "Alerts & Automations", icon: "BellRing", permission: "farm.view", organisationWide: true },
     { href: "/weather-history", label: "Weather History", icon: "CloudRain", permission: "farm.view" },
-    { href: "/settings", label: "Settings", icon: "Cog", permission: "farm.view" },
+    { href: "/settings", label: "Settings", icon: "Cog", permission: "farm.view", organisationWide: true },
   ] },
 ];
 
-export function visibleNavGroups(allowed: (permission: Permission) => boolean) {
-  return navGroups.map(g => ({ ...g, items: g.items.filter(i => allowed(i.permission)) })).filter(g => g.items.length);
+/** Items the member may open; organisation-wide pages are hidden from members limited to specific farms. */
+export function visibleNavGroups(allowed: (permission: Permission) => boolean, farmScoped = false) {
+  return navGroups.map(g => ({ ...g, items: g.items.filter(i => allowed(i.permission) && !(farmScoped && i.organisationWide)) })).filter(g => g.items.length);
 }

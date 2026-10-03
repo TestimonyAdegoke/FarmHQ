@@ -22,13 +22,13 @@ export default async function CropOperationsPage({ searchParams }: { searchParam
   const requested = (await searchParams).tab;
   const tab = requested === "scouting" || requested === "harvests" ? requested : "activities";
   const [farms, units, cycles, activities, observations, harvests, warehouses, products] = await Promise.all([
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true, type: { in: ["FIELD","PLOT","GREENHOUSE","ORCHARD","NURSERY"] } }, include: { farm: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, type: "CROP", status: { in: ["PLANNED","ACTIVE","PAUSED"] } }, include: { farm: true }, orderBy: { name: "asc" } }),
-    db.cropActivity.findMany({ where: { tenantId: ctx.tenantId }, include: { farm: true, unit: true, cycle: true }, orderBy: [{ plannedAt: "desc" }, { createdAt: "desc" }], take: 100 }),
-    db.scoutingObservation.findMany({ where: { tenantId: ctx.tenantId }, include: { farm: true, unit: true, cycle: true }, orderBy: { observedAt: "desc" }, take: 100 }),
-    db.harvestRecord.findMany({ where: { tenantId: ctx.tenantId }, include: { farm: true, productionUnit: true, cycle: true }, orderBy: { harvestedAt: "desc" }, take: 100 }),
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm, type: { in: ["FIELD","PLOT","GREENHOUSE","ORCHARD","NURSERY"] } }, include: { farm: true }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, type: "CROP", status: { in: ["PLANNED","ACTIVE","PAUSED"] } }, include: { farm: true }, orderBy: { name: "asc" } }),
+    db.cropActivity.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { farm: true, unit: true, cycle: true }, orderBy: [{ plannedAt: "desc" }, { createdAt: "desc" }], take: 100 }),
+    db.scoutingObservation.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { farm: true, unit: true, cycle: true }, orderBy: { observedAt: "desc" }, take: 100 }),
+    db.harvestRecord.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { farm: true, productionUnit: true, cycle: true }, orderBy: { harvestedAt: "desc" }, take: 100 }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
   ]);
   const openActivities = activities.filter(a => !["COMPLETED","CANCELLED"].includes(a.status)).length;

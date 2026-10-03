@@ -17,10 +17,10 @@ const logTone: Record<string,string> = { USAGE:"neutral", FUEL:"neutral", MAINTE
 export default async function EquipmentPage() {
   const ctx=await tenantContext("equipment.view");
   const [farms,cycles,equipment,logs]=await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,status:{in:["PLANNED","ACTIVE","PAUSED"]}},orderBy:{name:"asc"}}),
-    db.equipment.findMany({where:{tenantId:ctx.tenantId},include:{farm:true},orderBy:{name:"asc"}}),
-    db.equipmentLog.findMany({where:{tenantId:ctx.tenantId},include:{equipment:true,farm:true,cycle:true},orderBy:{logDate:"desc"},take:120}),
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm,status:{in:["PLANNED","ACTIVE","PAUSED"]}},orderBy:{name:"asc"}}),
+    db.equipment.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{farm:true},orderBy:{name:"asc"}}),
+    db.equipmentLog.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{equipment:true,farm:true,cycle:true},orderBy:{logDate:"desc"},take:120}),
   ]);
   const serviceDue=equipment.filter(e=>e.nextServiceAt!=null&&e.meterReading!=null&&Number(e.meterReading)>=Number(e.nextServiceAt)).length;
   const value=equipment.reduce((s,e)=>s+Number(e.purchaseValue||0),0);
@@ -60,7 +60,7 @@ export default async function EquipmentPage() {
             <div className="field"><label>Name</label><input name="name" required placeholder="John Deere 5075E"/></div>
             <div className="field"><label>Code</label><input name="code" placeholder="TR-04"/></div>
             <div className="field"><label>Category</label><input name="category" required placeholder="Tractor"/></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Shared / central</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Shared / central</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Status</label><select name="status" defaultValue="AVAILABLE"><option value="AVAILABLE">Available</option><option value="IN_USE">In use</option><option value="MAINTENANCE">Maintenance</option><option value="OUT_OF_SERVICE">Out of service</option></select></div>
             <div className="field"><label>Purchase date</label><input name="purchaseDate" type="date"/></div>
             <div className="field"><label>Purchase value</label><input name="purchaseValue" type="number" min="0" step="0.01"/></div>

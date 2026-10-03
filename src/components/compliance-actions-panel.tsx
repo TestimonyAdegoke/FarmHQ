@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { createComplianceActionAction, updateComplianceActionStatusAction } from "@/app/v04-ops-actions";
 import { db } from "@/lib/db";
+import { complianceRecordIdWhere, type FarmScope } from "@/lib/farm-scope";
 import { humanize, safeDate } from "@/lib/utils";
 import { ActionForm } from "@/components/action-form";
 import { FormDetails } from "@/components/form-details";
@@ -9,13 +10,14 @@ const actionStatuses = ["OPEN", "IN_PROGRESS", "COMPLETED", "WAIVED"] as const;
 const actionTone = (status: string) => status === "OPEN" ? "warn" : status === "IN_PROGRESS" ? "info" : status === "WAIVED" ? "neutral" : "";
 
 /** Corrective actions: a create drawer (laid out beside any `children` drawers) followed by the action list. */
-export async function ComplianceActionsPanel({ tenantId, records, children }:{
+export async function ComplianceActionsPanel({ tenantId, farmScope, records, children }:{
   tenantId:string;
+  farmScope:FarmScope;
   records:{id:string;title:string}[];
   children?:ReactNode;
 }) {
   const [actions,memberships] = await Promise.all([
-    db.complianceAction.findMany({where:{tenantId},orderBy:[{dueAt:"asc"},{createdAt:"desc"}],take:100}),
+    db.complianceAction.findMany({where:{tenantId,...(await complianceRecordIdWhere(tenantId,farmScope))},orderBy:[{dueAt:"asc"},{createdAt:"desc"}],take:100}),
     db.membership.findMany({where:{tenantId},include:{user:true},orderBy:{user:{name:"asc"}}}),
   ]);
   const recordNames=new Map(records.map(record=>[record.id,record.title]));

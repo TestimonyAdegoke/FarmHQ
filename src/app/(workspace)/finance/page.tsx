@@ -40,17 +40,17 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const period = periods.some(([k]) => k === params.period) ? params.period! : "month";
   const tab = params.tab === "income" ? "income" : params.tab === "approvals" ? "approvals" : "expenses";
   const since = periodStart(period);
-  const expenseWhere: Prisma.ExpenseWhereInput = { tenantId: ctx.tenantId, ...(since ? { incurredAt: { gte: since } } : {}) };
-  const revenueWhere: Prisma.RevenueWhereInput = { tenantId: ctx.tenantId, ...(since ? { occurredAt: { gte: since } } : {}) };
+  const expenseWhere: Prisma.ExpenseWhereInput = { tenantId: ctx.tenantId, ...ctx.scope.byFarm, ...(since ? { incurredAt: { gte: since } } : {}) };
+  const revenueWhere: Prisma.RevenueWhereInput = { tenantId: ctx.tenantId, ...ctx.scope.byFarm, ...(since ? { occurredAt: { gte: since } } : {}) };
   const [farms, cycles, accounts, expenses, revenues, pending, openInvoices, openPOs] = await Promise.all([
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
     db.expense.findMany({ where: expenseWhere, include: { farm: true, cycle: true, account: true }, orderBy: { incurredAt: "desc" }, take: 300 }),
     db.revenue.findMany({ where: revenueWhere, include: { farm: true, cycle: true }, orderBy: { occurredAt: "desc" }, take: 300 }),
-    db.expense.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } }, include: { farm: true, cycle: true }, orderBy: { incurredAt: "asc" }, take: 100 }),
-    db.invoice.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] } }, select: { total: true, amountPaid: true } }),
-    db.purchaseOrder.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"] } }, include: { items: true, payments: true } }),
+    db.expense.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] }, ...ctx.scope.byFarm }, include: { farm: true, cycle: true }, orderBy: { incurredAt: "asc" }, take: 100 }),
+    db.invoice.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ISSUED", "PARTIALLY_PAID"] }, ...ctx.scope.byFarm }, select: { total: true, amountPaid: true } }),
+    db.purchaseOrder.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"] }, ...ctx.scope.byFarm }, include: { items: true, payments: true } }),
   ]);
   const money = (n: number | string | { toString(): string }) => formatMoney(n, ctx.tenant.currency);
   const spent = expenses.filter(e => ["APPROVED", "PAID"].includes(e.status)).reduce((s, e) => s + Number(e.amount), 0);
@@ -79,7 +79,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
             <div className="field"><label>Category</label><input name="category" required placeholder="Fuel / Feed / Transport" list="expense-categories" /></div>
             <div className="field"><label>Amount ({ctx.tenant.currency})</label><input name="amount" required type="number" inputMode="decimal" min="0.01" step="0.01" /></div>
             <div className="field span-2"><label>Description</label><input name="description" required /></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">Not allocated</option>{cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div className="field"><label>Paid to</label><input name="vendor" /></div>
             <div className="field"><label>Date</label><input name="incurredAt" type="date" /></div>
@@ -97,7 +97,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
             <div className="field"><label>Type</label><select name="type" defaultValue="OTHER">{revenueTypes.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
             <div className="field"><label>Amount ({ctx.tenant.currency})</label><input name="amount" required type="number" inputMode="decimal" min="0.01" step="0.01" /></div>
             <div className="field span-2"><label>Description</label><input name="description" required /></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Production cycle</label><select name="cycleId" defaultValue=""><option value="">Not allocated</option>{cycles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div className="field"><label>From</label><input name="customer" /></div>
             <div className="field"><label>Date</label><input name="occurredAt" type="date" /></div>

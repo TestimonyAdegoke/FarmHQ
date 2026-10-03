@@ -9,12 +9,14 @@ import { paymentMethods, revenueTypes } from "@/lib/options";
 
 type Option = { id: string; name: string };
 
-export function QuickSaleForm({ customers, products, warehouses, accounts, farms, cycles, stock, currency, today }: {
+export function QuickSaleForm({ customers, products, warehouses, accounts, farms, farmRequired = false, cycles, stock, currency, today }: {
   customers: (Option & { phone: string | null })[];
   products: { id: string; name: string; unit: string; price: number | null }[];
   warehouses: Option[];
   accounts: (Option & { type: string })[];
   farms: Option[];
+  /** Farm-scoped sellers cannot record organisation-wide sales. */
+  farmRequired?: boolean;
   cycles: (Option & { farmId: string })[];
   stock: Record<string, Record<string, number>>;
   currency: string;
@@ -22,7 +24,7 @@ export function QuickSaleForm({ customers, products, warehouses, accounts, farms
 }) {
   const [customerId, setCustomerId] = useState("");
   const [warehouseId, setWarehouseId] = useState(warehouses.length === 1 ? warehouses[0].id : "");
-  const [farmId, setFarmId] = useState(farms.length === 1 ? farms[0].id : "");
+  const [farmId, setFarmId] = useState(farms.length === 1 || farmRequired ? farms[0]?.id ?? "" : "");
   const [paidInFull, setPaidInFull] = useState(true);
   const [method, setMethod] = useState("CASH");
   const lineProducts = useMemo(() => products.map(p => ({ ...p, onHand: warehouseId ? stock[warehouseId]?.[p.id] ?? 0 : undefined })), [products, stock, warehouseId]);
@@ -41,7 +43,7 @@ export function QuickSaleForm({ customers, products, warehouses, accounts, farms
     <div className="card-head" style={{ marginTop: 22 }}><h2>2. What are they buying?</h2></div>
     <div className="form-grid">
       <div className="field"><label>Sell from store</label><select name="warehouseId" value={warehouseId} onChange={e => setWarehouseId(e.target.value)}><option value="">Don&apos;t reduce stock</option>{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
-      <div className="field"><label>Farm</label><select name="farmId" value={farmId} onChange={e => setFarmId(e.target.value)}><option value="">Organization-wide</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+      <div className="field"><label>Farm</label><select name="farmId" value={farmId} onChange={e => setFarmId(e.target.value)}>{farmRequired ? null : <option value="">Organization-wide</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
       <div className="field"><label>Production cycle (optional)</label><select name="cycleId" defaultValue=""><option value="">Not linked</option>{cycles.filter(c => !farmId || c.farmId === farmId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
       <div className="field"><label>Income type</label><select name="revenueType" defaultValue="HARVEST_SALE">{revenueTypes.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
     </div>

@@ -14,8 +14,8 @@ export const metadata = { title: "Aquaculture" };
 export default async function AquaculturePage() {
   const ctx=await tenantContext("livestock.view");
   const [cycles,records]=await Promise.all([
-    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,type:"AQUACULTURE"},include:{farm:true,unit:true},orderBy:{name:"asc"}}),
-    db.aquacultureRecord.findMany({where:{tenantId:ctx.tenantId},include:{cycle:{include:{farm:true}}},orderBy:{recordDate:"desc"},take:120}),
+    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,type:"AQUACULTURE",...ctx.scope.byFarm},include:{farm:true,unit:true},orderBy:{name:"asc"}}),
+    db.aquacultureRecord.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.via("cycle")},include:{cycle:{include:{farm:true}}},orderBy:{recordDate:"desc"},take:120}),
   ]);
   const mortality=records.reduce((s,r)=>s+r.mortality,0),feed=records.reduce((s,r)=>s+Number(r.feedKg||0),0);
   const latest=records[0];

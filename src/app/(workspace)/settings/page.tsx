@@ -10,7 +10,7 @@ import { ActionForm } from "@/components/action-form";
 export const metadata={title:"Settings"};
 
 export default async function SettingsPage(){
- const ctx=await tenantContext();
+ const ctx=await tenantContext(undefined,{organisationWide:true});
  const audits=await db.auditLog.findMany({where:{tenantId:ctx.tenantId},include:{user:true},orderBy:{createdAt:"desc"},take:30});
  return <><PageHeader eyebrow="Administration" title="Organization settings" description="Your organization's basic details and a history of recent changes made in FarmHQ."/>
   <div className="grid-main-side">

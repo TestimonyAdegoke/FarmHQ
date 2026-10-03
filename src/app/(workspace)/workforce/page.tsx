@@ -29,14 +29,14 @@ export default async function WorkforcePage({ searchParams }: { searchParams: Pr
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const [farms, cycles, workers, pending, recent, monthSheets, presentToday, advances, accounts] = await Promise.all([
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] } }, orderBy: { name: "asc" } }),
-    db.workforceMember.findMany({ where: { tenantId: ctx.tenantId, active: true }, include: { farm: true }, orderBy: { name: "asc" } }),
-    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, status: "SUBMITTED" }, include: { worker: true, farm: true, cycle: true }, orderBy: { workDate: "desc" }, take: 200 }),
-    db.timesheet.findMany({ where: { tenantId: ctx.tenantId }, include: { worker: true, farm: true, cycle: true, payRun: { select: { runNo: true } } }, orderBy: [{ workDate: "desc" }, { createdAt: "desc" }], take: 100 }),
-    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, status: "APPROVED", workDate: { gte: monthStart } }, select: { hours: true, hourlyRate: true, amount: true } }),
-    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, workDate: { gte: today, lt: new Date(today.getTime() + 86_400_000) } }, distinct: ["workerId"], select: { workerId: true } }),
-    db.workerAdvance.findMany({ where: { tenantId: ctx.tenantId, payRunId: null }, include: { worker: true }, orderBy: { issuedAt: "desc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, status: { in: ["PLANNED", "ACTIVE", "PAUSED"] } }, orderBy: { name: "asc" } }),
+    db.workforceMember.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, include: { farm: true }, orderBy: { name: "asc" } }),
+    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, status: "SUBMITTED", ...ctx.scope.byFarm }, include: { worker: true, farm: true, cycle: true }, orderBy: { workDate: "desc" }, take: 200 }),
+    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { worker: true, farm: true, cycle: true, payRun: { select: { runNo: true } } }, orderBy: [{ workDate: "desc" }, { createdAt: "desc" }], take: 100 }),
+    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, status: "APPROVED", workDate: { gte: monthStart } }, select: { hours: true, hourlyRate: true, amount: true } }),
+    db.timesheet.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm, workDate: { gte: today, lt: new Date(today.getTime() + 86_400_000) } }, distinct: ["workerId"], select: { workerId: true } }),
+    db.workerAdvance.findMany({ where: { tenantId: ctx.tenantId, payRunId: null, ...ctx.scope.via("worker") }, include: { worker: true }, orderBy: { issuedAt: "desc" } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
   ]);
   const money = (n: number | string | { toString(): string }) => formatMoney(n, ctx.tenant.currency);
@@ -65,7 +65,7 @@ export default async function WorkforcePage({ searchParams }: { searchParams: Pr
             <div className="field"><label>Phone</label><input name="phone" type="tel" inputMode="tel" /></div>
             <div className="field"><label>Job / role</label><input name="jobTitle" placeholder="Farmhand / poultry attendant / driver" /></div>
             <div className="field"><label>Staff no.</label><input name="employeeNo" /></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Shared / central</option>{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Shared / central</option>}{farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Employment</label><select name="employmentType" defaultValue="TEMPORARY"><option value="PERMANENT">Permanent</option><option value="TEMPORARY">Casual / temporary</option><option value="SEASONAL">Seasonal</option><option value="CONTRACTOR">Contractor</option></select></div>
             <div className="field span-2"><label>How are they paid?</label><select name="payBasis" defaultValue="DAILY">{payBases.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
             <div className="field"><label>Daily rate</label><input name="dailyRate" type="number" inputMode="decimal" min="0" step="0.01" /></div>

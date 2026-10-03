@@ -14,11 +14,11 @@ export default async function QuickSalePage() {
   const [customers, products, warehouses, accounts, farms, cycles, positions] = await Promise.all([
     db.customer.findMany({ where: { tenantId: ctx.tenantId, active: true }, select: { id: true, name: true, phone: true }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, select: { id: true, name: true, unit: true, sellingPrice: true }, orderBy: { name: "asc" } }),
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, select: { id: true, name: true, type: true }, orderBy: { name: "asc" } }),
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ACTIVE", "PLANNED", "PAUSED"] } }, select: { id: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
-    stockPositions(ctx.tenantId),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, status: { in: ["ACTIVE", "PLANNED", "PAUSED"] }, ...ctx.scope.byFarm }, select: { id: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
+    stockPositions(ctx.tenantId, db, ctx.farmScope),
   ]);
   const stock: Record<string, Record<string, number>> = {};
   for (const [key, qty] of positions.byLocation) {
@@ -31,7 +31,7 @@ export default async function QuickSalePage() {
     <QuickSaleForm
       customers={customers}
       products={products.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.sellingPrice != null ? Number(p.sellingPrice) : null }))}
-      warehouses={warehouses} accounts={accounts} farms={farms} cycles={cycles} stock={stock}
+      warehouses={warehouses} accounts={accounts} farms={farms} farmRequired={ctx.scope.limited} cycles={cycles} stock={stock}
       currency={ctx.tenant.currency} today={toDateInput(new Date())}
     />
   </>;

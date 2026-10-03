@@ -14,8 +14,8 @@ export const metadata = { title: "Poultry" };
 export default async function PoultryPage() {
   const ctx = await tenantContext("livestock.view");
   const [cycles, records] = await Promise.all([
-    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, type: "POULTRY" }, include: { farm: true, unit: true }, orderBy: { name: "asc" } }),
-    db.poultryDailyRecord.findMany({ where: { tenantId: ctx.tenantId }, include: { cycle: { include: { farm: true } } }, orderBy: { recordDate: "desc" }, take: 120 }),
+    db.productionCycle.findMany({ where: { tenantId: ctx.tenantId, type: "POULTRY", ...ctx.scope.byFarm }, include: { farm: true, unit: true }, orderBy: { name: "asc" } }),
+    db.poultryDailyRecord.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("cycle") }, include: { cycle: { include: { farm: true } } }, orderBy: { recordDate: "desc" }, take: 120 }),
   ]);
   const mortality=records.reduce((s,r)=>s+r.mortality,0), culls=records.reduce((s,r)=>s+r.culls,0), feed=records.reduce((s,r)=>s+Number(r.feedKg||0),0), eggs=records.reduce((s,r)=>s+(r.eggs||0),0);
   return <><PageHeader eyebrow="Operations" title="Poultry" description="Daily flock records for broiler and layer batches: deaths, feed, water, eggs and weight."/>

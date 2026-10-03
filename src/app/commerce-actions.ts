@@ -8,7 +8,8 @@ import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { attempt, dateValue, fail, integerValue, lineItems, numberValue, optional, text } from "@/lib/forms";
 import { invoiceBalance, nextDocumentNumber } from "@/lib/ledger";
-import { can, type Permission } from "@/lib/permissions";
+import { assertOrganisationWide, farmWhere, isScoped, memberCan, resolveFarmId } from "@/lib/farm-scope";
+import type { Permission } from "@/lib/permissions";
 import { formatNumber } from "@/lib/utils";
 
 type Tx = Prisma.TransactionClient;
@@ -18,8 +19,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 async function context(...permissions: Permission[]) {
   const { session, membership } = await requireSession();
-  if (!permissions.some(p => can(membership.role, p))) fail("Your role does not allow this action.");
-  return { tenantId: session.tenantId, userId: session.userId };
+  if (!permissions.some(p => memberCan(membership, p))) fail("Your role does not allow this action.");
+  return { tenantId: session.tenantId, userId: session.userId, scope: membership.farmScope };
 }
 
 function refresh(...paths: string[]) {
@@ -148,10 +149,10 @@ const methodOf = (form: FormData) => z.nativeEnum(PaymentMethod).parse(text(form
 export async function quickSaleAction(form: FormData) {
   let invoiceId = "";
   const result = await attempt(async () => {
-    const { tenantId, userId } = await context("sales.manage");
+    const { tenantId, userId, scope } = await context("sales.manage");
     const items = lineItems(form);
     const warehouseId = optional(form, "warehouseId");
-    const farmId = optional(form, "farmId");
+    const farmId = resolveFarmId(scope, optional(form, "farmId"));
     const cycleId = optional(form, "cycleId");
     const saleDate = dateValue(form, "saleDate") || new Date();
     const discount = numberValue(form, "discount") || 0;
@@ -160,9 +161,9 @@ export async function quickSaleAction(form: FormData) {
     const revenueType = z.nativeEnum(RevenueType).parse(text(form, "revenueType") || "HARVEST_SALE");
     const outcome = await withNumberRetry(() => db.$transaction(async tx => {
       await validateLines(tx, tenantId, items);
-      if (warehouseId && !(await tx.warehouse.findFirst({ where: { id: warehouseId, tenantId }, select: { id: true } }))) fail("Warehouse not found");
+      if (warehouseId && !(await tx.warehouse.findFirst({ where: { id: warehouseId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Warehouse not found");
       if (farmId && !(await tx.farm.findFirst({ where: { id: farmId, tenantId }, select: { id: true } }))) fail("Farm not found");
-      if (cycleId && !(await tx.productionCycle.findFirst({ where: { id: cycleId, tenantId }, select: { id: true } }))) fail("Production cycle not found");
+      if (cycleId && !(await tx.productionCycle.findFirst({ where: { id: cycleId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Production cycle not found");
       const accountId = await ownedAccount(tx, tenantId, optional(form, "accountId"));
       const customer = await resolveCustomer(tx, tenantId, form);
       if (warehouseId) await assertStockAvailable(tx, tenantId, warehouseId, items);
@@ -195,10 +196,10 @@ export async function quickSaleAction(form: FormData) {
 
 export async function createSalesOrderAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("sales.manage");
+    const { tenantId, scope } = await context("sales.manage");
     const items = lineItems(form);
     const customerId = text(form, "customerId");
-    const farmId = optional(form, "farmId");
+    const farmId = resolveFarmId(scope, optional(form, "farmId"));
     const cycleId = optional(form, "cycleId");
     const warehouseId = optional(form, "warehouseId");
     const order = await db.$transaction(async tx => {
@@ -206,8 +207,8 @@ export async function createSalesOrderAction(form: FormData) {
       const [customer, farm, cycle, warehouse] = await Promise.all([
         tx.customer.findFirst({ where: { id: customerId, tenantId }, select: { id: true } }),
         farmId ? tx.farm.findFirst({ where: { id: farmId, tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-        cycleId ? tx.productionCycle.findFirst({ where: { id: cycleId, tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-        warehouseId ? tx.warehouse.findFirst({ where: { id: warehouseId, tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
+        cycleId ? tx.productionCycle.findFirst({ where: { id: cycleId, tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve({ id: "" }),
+        warehouseId ? tx.warehouse.findFirst({ where: { id: warehouseId, tenantId, ...farmWhere(scope) }, select: { id: true } }) : Promise.resolve({ id: "" }),
       ]);
       if (!customer) fail("Select a customer");
       if (!farm || !cycle || !warehouse) fail("Invalid farm, cycle or warehouse");
@@ -229,10 +230,10 @@ export async function createSalesOrderAction(form: FormData) {
 /** Delivers an order: posts stock out (if a warehouse is set) and issues the invoice that recognises revenue. */
 export async function fulfillSalesOrderAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("sales.manage");
+    const { tenantId, userId, scope } = await context("sales.manage");
     const id = text(form, "id");
     const invoice = await withNumberRetry(() => db.$transaction(async tx => {
-      const order = await tx.salesOrder.findFirst({ where: { id, tenantId }, include: { items: true, customer: true, invoice: true } });
+      const order = await tx.salesOrder.findFirst({ where: { id, tenantId, ...farmWhere(scope) }, include: { items: true, customer: true, invoice: true } });
       if (!order || !["DRAFT", "CONFIRMED"].includes(order.status)) fail("This order has already been delivered or cancelled");
       const lines: Line[] = order.items.map(i => ({ productId: i.productId || undefined, description: i.description, quantity: Number(i.quantity), unit: i.unit, unitPrice: Number(i.unitPrice) }));
       const now = new Date();
@@ -256,9 +257,9 @@ export async function fulfillSalesOrderAction(form: FormData) {
 
 export async function cancelSalesOrderAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("sales.manage");
+    const { tenantId, scope } = await context("sales.manage");
     const id = text(form, "id");
-    const order = await db.salesOrder.findFirst({ where: { id, tenantId }, select: { status: true } });
+    const order = await db.salesOrder.findFirst({ where: { id, tenantId, ...farmWhere(scope) }, select: { status: true } });
     if (!order || !["DRAFT", "CONFIRMED"].includes(order.status)) fail("Only open orders can be cancelled");
     await db.salesOrder.update({ where: { id }, data: { status: SalesOrderStatus.CANCELLED } });
     await audit("sales_order.cancel", "SalesOrder", id);
@@ -269,14 +270,14 @@ export async function cancelSalesOrderAction(form: FormData) {
 export async function createInvoiceAction(form: FormData) {
   let invoiceId = "";
   const result = await attempt(async () => {
-    const { tenantId, userId } = await context("sales.manage");
+    const { tenantId, userId, scope } = await context("sales.manage");
     const items = lineItems(form);
-    const farmId = optional(form, "farmId");
+    const farmId = resolveFarmId(scope, optional(form, "farmId"));
     const cycleId = optional(form, "cycleId");
     const invoice = await withNumberRetry(() => db.$transaction(async tx => {
       await validateLines(tx, tenantId, items);
       if (farmId && !(await tx.farm.findFirst({ where: { id: farmId, tenantId }, select: { id: true } }))) fail("Farm not found");
-      if (cycleId && !(await tx.productionCycle.findFirst({ where: { id: cycleId, tenantId }, select: { id: true } }))) fail("Production cycle not found");
+      if (cycleId && !(await tx.productionCycle.findFirst({ where: { id: cycleId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Production cycle not found");
       const customer = await resolveCustomer(tx, tenantId, form);
       const issueDate = dateValue(form, "issueDate") || new Date();
       return createInvoiceRecord(tx, { tenantId, userId, customerId: customer.id, customerName: customer.name, farmId, cycleId, items, discount: numberValue(form, "discount") || 0, tax: numberValue(form, "tax") || 0, issueDate, dueDate: dueFrom(issueDate, dateValue(form, "dueDate"), customer.paymentTermsDays), notes: optional(form, "notes"), revenueType: z.nativeEnum(RevenueType).parse(text(form, "revenueType") || "OTHER") });
@@ -291,10 +292,10 @@ export async function createInvoiceAction(form: FormData) {
 
 export async function recordInvoicePaymentAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("sales.manage", "finance.manage");
+    const { tenantId, userId, scope } = await context("sales.manage", "finance.manage");
     const invoiceId = text(form, "invoiceId");
     const payment = await withNumberRetry(() => db.$transaction(async tx => {
-      const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, tenantId }, select: { customerId: true } });
+      const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, tenantId, ...farmWhere(scope) }, select: { customerId: true } });
       if (!invoice) fail("Invoice not found");
       return applyPayment(tx, { tenantId, userId, customerId: invoice.customerId, invoiceId, amount: z.number().positive().parse(numberValue(form, "amount")), method: methodOf(form), accountId: await ownedAccount(tx, tenantId, optional(form, "accountId")), reference: optional(form, "reference"), receivedAt: dateValue(form, "receivedAt") || new Date(), notes: optional(form, "notes") });
     }));
@@ -307,13 +308,13 @@ export async function recordInvoicePaymentAction(form: FormData) {
 /** Receives money from a customer and allocates it to their oldest open invoices; any excess is kept as customer credit. */
 export async function receiveCustomerPaymentAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("sales.manage", "finance.manage");
+    const { tenantId, userId, scope } = await context("sales.manage", "finance.manage");
     const customerId = text(form, "customerId");
     const amount = z.number().positive().parse(numberValue(form, "amount"));
     const receipts = await withNumberRetry(() => db.$transaction(async tx => {
       if (!(await tx.customer.findFirst({ where: { id: customerId, tenantId }, select: { id: true } }))) fail("Customer not found");
       const accountId = await ownedAccount(tx, tenantId, optional(form, "accountId"));
-      const open = await tx.invoice.findMany({ where: { tenantId, customerId, status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] } }, orderBy: [{ issueDate: "asc" }, { invoiceNo: "asc" }], select: { id: true, total: true, amountPaid: true } });
+      const open = await tx.invoice.findMany({ where: { tenantId, customerId, ...farmWhere(scope), status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] } }, orderBy: [{ issueDate: "asc" }, { invoiceNo: "asc" }], select: { id: true, total: true, amountPaid: true } });
       let remaining = round2(amount);
       const made: string[] = [];
       const base = { tenantId, userId, customerId, method: methodOf(form), accountId, reference: optional(form, "reference"), receivedAt: dateValue(form, "receivedAt") || new Date(), notes: optional(form, "notes") };
@@ -324,6 +325,7 @@ export async function receiveCustomerPaymentAction(form: FormData) {
         made.push((await applyPayment(tx, { ...base, invoiceId: inv.id, amount: share })).receiptNo);
         remaining = round2(remaining - share);
       }
+      if (remaining > 0 && isScoped(scope)) fail(`This is ${formatNumber(remaining, 2)} more than the customer owes on your farms' invoices. Ask someone with access to all farms to record customer credit.`);
       if (remaining > 0) made.push((await applyPayment(tx, { ...base, amount: remaining, notes: base.notes || "Customer credit / advance payment" })).receiptNo);
       return made;
     }));
@@ -335,11 +337,11 @@ export async function receiveCustomerPaymentAction(form: FormData) {
 
 export async function voidInvoiceAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("sales.manage");
+    const { tenantId, scope } = await context("sales.manage");
     const id = text(form, "id");
     const reason = optional(form, "reason");
     await db.$transaction(async tx => {
-      const invoice = await tx.invoice.findFirst({ where: { id, tenantId }, select: { status: true, amountPaid: true, notes: true } });
+      const invoice = await tx.invoice.findFirst({ where: { id, tenantId, ...farmWhere(scope) }, select: { status: true, amountPaid: true, notes: true } });
       if (!invoice || invoice.status === InvoiceStatus.VOID) fail("Invoice not found or already void");
       if (Number(invoice.amountPaid) > 0) fail("This invoice has payments. Record a refund expense instead of voiding it.");
       await tx.revenue.deleteMany({ where: { tenantId, invoiceId: id } });
@@ -381,7 +383,8 @@ export async function saveCustomerAction(form: FormData) {
 
 export async function createMoneyAccountAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("finance.manage");
+    const { tenantId, scope } = await context("finance.manage");
+    assertOrganisationWide(scope, "cash and bank accounts");
     const account = await db.moneyAccount.create({
       data: {
         tenantId,
@@ -400,7 +403,8 @@ export async function createMoneyAccountAction(form: FormData) {
 
 export async function toggleMoneyAccountAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("finance.manage");
+    const { tenantId, scope } = await context("finance.manage");
+    assertOrganisationWide(scope, "cash and bank accounts");
     const id = text(form, "id");
     const account = await db.moneyAccount.findFirst({ where: { id, tenantId }, select: { active: true } });
     if (!account) fail("Account not found");
@@ -412,7 +416,8 @@ export async function toggleMoneyAccountAction(form: FormData) {
 
 export async function transferFundsAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("finance.manage");
+    const { tenantId, userId, scope } = await context("finance.manage");
+    assertOrganisationWide(scope, "transfers between accounts");
     const fromAccountId = await ownedAccount(db, tenantId, text(form, "fromAccountId"));
     const toAccountId = await ownedAccount(db, tenantId, text(form, "toAccountId"));
     if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) fail("Choose two different accounts");
@@ -429,10 +434,10 @@ export async function transferFundsAction(form: FormData) {
 
 export async function updateExpenseStatusAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("finance.manage");
+    const { tenantId, scope } = await context("finance.manage");
     const id = text(form, "id");
     const status = z.nativeEnum(ExpenseStatus).parse(text(form, "status"));
-    const expense = await db.expense.findFirst({ where: { id, tenantId }, select: { status: true } });
+    const expense = await db.expense.findFirst({ where: { id, tenantId, ...farmWhere(scope) }, select: { status: true } });
     if (!expense) fail("Expense not found");
     const allowed: Record<string, ExpenseStatus[]> = {
       DRAFT: ["SUBMITTED", "APPROVED", "REJECTED", "VOID"], SUBMITTED: ["APPROVED", "REJECTED", "VOID"], APPROVED: ["PAID", "VOID"], REJECTED: ["SUBMITTED", "VOID"], PAID: ["VOID"], VOID: [],
@@ -447,12 +452,13 @@ export async function updateExpenseStatusAction(form: FormData) {
 
 export async function recordVendorPaymentAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("procurement.manage", "finance.manage");
+    const { tenantId, userId, scope } = await context("procurement.manage", "finance.manage");
     const purchaseOrderId = optional(form, "purchaseOrderId");
+    if (!purchaseOrderId && isScoped(scope)) fail("Select the purchase order this payment is for.");
     let vendorId = optional(form, "vendorId");
     const amount = z.number().positive().parse(numberValue(form, "amount"));
     if (purchaseOrderId) {
-      const po = await db.purchaseOrder.findFirst({ where: { id: purchaseOrderId, tenantId }, include: { items: true, payments: true } });
+      const po = await db.purchaseOrder.findFirst({ where: { id: purchaseOrderId, tenantId, ...farmWhere(scope) }, include: { items: true, payments: true } });
       if (!po) fail("Purchase order not found");
       vendorId = po.vendorId;
       const total = po.items.reduce((s, i) => s + Number(i.quantity) * Number(i.unitPrice), 0);

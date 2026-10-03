@@ -15,9 +15,9 @@ const statusTone: Record<string, string> = { PLANNED: "neutral", PAUSED: "warn",
 export default async function ProductionPage() {
   const ctx = await tenantContext("production.view");
   const [farms, units, cycles] = await Promise.all([
-    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true},orderBy:{name:"asc"}}),
-    db.productionCycle.findMany({where:{tenantId:ctx.tenantId},include:{farm:true,unit:true,_count:{select:{tasks:true,inventoryTxns:true,expenses:true}}},orderBy:{createdAt:"desc"}}),
+    db.farm.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.farms},orderBy:{name:"asc"}}),
+    db.productionUnit.findMany({where:{tenantId:ctx.tenantId,active:true,...ctx.scope.byFarm},orderBy:{name:"asc"}}),
+    db.productionCycle.findMany({where:{tenantId:ctx.tenantId,...ctx.scope.byFarm},include:{farm:true,unit:true,_count:{select:{tasks:true,inventoryTxns:true,expenses:true}}},orderBy:{createdAt:"desc"}}),
   ]);
   return <><PageHeader eyebrow="Operations" title="Production cycles" description="Crop seasons, livestock groups, poultry batches and fish cycles. Work, inputs and costs attach to a cycle."/>
     <FormDetails title="Start a production cycle" hint={farms.length ? "Link tasks, stock used and costs to it as the season runs." : "Add a farm first."} open={!cycles.length}>

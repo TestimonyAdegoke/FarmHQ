@@ -21,13 +21,13 @@ export default async function ProcurementPage() {
   const ctx = await tenantContext("procurement.view");
   const [vendors, farms, products, warehouses, requests, accounts, vendorPayments, orders] = await Promise.all([
     db.vendor.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
+    db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.farms }, orderBy: { name: "asc" } }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.purchaseRequest.findMany({ where: { tenantId: ctx.tenantId }, include: { farm: true, items: { include: { product: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
+    db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true, ...ctx.scope.byFarm }, orderBy: { name: "asc" } }),
+    db.purchaseRequest.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { farm: true, items: { include: { product: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
     db.moneyAccount.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
-    db.vendorPayment.findMany({ where: { tenantId: ctx.tenantId }, include: { vendor: true, purchaseOrder: true, account: true }, orderBy: { paidAt: "desc" }, take: 30 }),
-    db.purchaseOrder.findMany({ where: { tenantId: ctx.tenantId }, include: { vendor: true, farm: true, warehouse: true, items: { include: { product: true } }, payments: true }, orderBy: { orderDate: "desc" }, take: 100 }),
+    db.vendorPayment.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.via("purchaseOrder") }, include: { vendor: true, purchaseOrder: true, account: true }, orderBy: { paidAt: "desc" }, take: 30 }),
+    db.purchaseOrder.findMany({ where: { tenantId: ctx.tenantId, ...ctx.scope.byFarm }, include: { vendor: true, farm: true, warehouse: true, items: { include: { product: true } }, payments: true }, orderBy: { orderDate: "desc" }, take: 100 }),
   ]);
   const committed = orders.filter(o=>!["CANCELLED","DRAFT"].includes(o.status)).reduce((sum,o)=>sum+o.items.reduce((s,i)=>s+Number(i.quantity)*Number(i.unitPrice),0),0);
   const pendingRequests = requests.filter(r=>["DRAFT","SUBMITTED"].includes(r.status)).length;
@@ -50,7 +50,7 @@ export default async function ProcurementPage() {
         <ActionForm action={createPurchaseOrderAction} success="Purchase order created">
           <div className="form-grid two">
             <div className="field"><label>Supplier</label><select name="vendorId" required defaultValue=""><option value="" disabled>Select supplier</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Source request</label><select name="requestId" defaultValue=""><option value="">No source request</option>{requests.filter(r=>!["REJECTED","CANCELLED","ORDERED"].includes(r.status)).map(r=><option key={r.id} value={r.id}>{r.requestNo} · {r.title}</option>)}</select></div>
             <div className="field"><label>Destination warehouse</label><select name="warehouseId" defaultValue=""><option value="">No stock receipt</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
             <div className="field"><label>Product</label><select name="productId" defaultValue=""><option value="">Uncatalogued item</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
@@ -69,7 +69,7 @@ export default async function ProcurementPage() {
         <ActionForm action={createPurchaseRequestAction} success="Request created">
           <div className="form-grid two">
             <div className="field span-2"><label>Request title</label><input name="title" required placeholder="Fertilizer for wet season maize"/></div>
-            <div className="field"><label>Farm</label><select name="farmId" defaultValue=""><option value="">Organization-wide</option>{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div className="field"><label>Farm</label><select name="farmId" defaultValue="">{ctx.scope.limited ? null : <option value="">Organization-wide</option>}{farms.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
             <div className="field"><label>Needed by</label><input name="neededBy" type="date"/></div>
             <div className="field"><label>Product</label><select name="productId" defaultValue=""><option value="">Uncatalogued item</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
             <div className="field"><label>Description</label><input name="description" required/></div>

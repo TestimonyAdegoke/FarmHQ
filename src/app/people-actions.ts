@@ -12,6 +12,7 @@ import { attempt, dateValue, fail, numberValue, optional, text } from "@/lib/for
 import { attendanceCost, STANDARD_DAY_HOURS } from "@/lib/labour";
 import { labourCost, nextDocumentNumber } from "@/lib/ledger";
 import { appOrigin } from "@/lib/origin";
+import { assertFarmAccess, assertOrganisationWide, farmWhere, memberCan } from "@/lib/farm-scope";
 import { can, type Permission } from "@/lib/permissions";
 import { normalizePhone } from "@/lib/utils";
 
@@ -19,17 +20,17 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 async function context(...permissions: Permission[]) {
   const { session, membership } = await requireSession();
-  if (!permissions.some(p => can(membership.role, p))) fail("Your role does not allow this action.");
-  return { tenantId: session.tenantId, userId: session.userId, role: membership.role };
+  if (!permissions.some(p => memberCan(membership, p))) fail("Your role does not allow this action.");
+  return { tenantId: session.tenantId, userId: session.userId, role: membership.role, scope: membership.farmScope };
 }
 
 // ── Workers ─────────────────────────────────────────────────────────────────
 
 export async function updateWorkerAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("workforce.manage");
+    const { tenantId, scope } = await context("workforce.manage");
     const id = text(form, "id");
-    if (!(await db.workforceMember.findFirst({ where: { id, tenantId }, select: { id: true } }))) fail("Worker not found");
+    if (!(await db.workforceMember.findFirst({ where: { id, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Worker not found");
     await db.workforceMember.update({
       where: { id },
       data: {
@@ -60,16 +61,18 @@ export async function updateWorkerAction(form: FormData) {
  */
 export async function recordAttendanceAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, role } = await context("workforce.manage", "workforce.attendance");
+    const { tenantId, role, scope } = await context("workforce.manage", "workforce.attendance");
     const workDate = dateValue(form, "workDate") || new Date();
     const farmId = optional(form, "farmId");
     const cycleId = optional(form, "cycleId");
     const activity = z.string().min(2, "Enter the work done").parse(text(form, "activity"));
+    if (farmId) assertFarmAccess(scope, farmId);
     if (farmId && !(await db.farm.findFirst({ where: { id: farmId, tenantId }, select: { id: true } }))) fail("Farm not found");
-    if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId }, select: { id: true } }))) fail("Production cycle not found");
+    if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Production cycle not found");
     const presentIds = form.getAll("present").map(String);
     if (!presentIds.length) fail("Tick at least one worker who was present");
-    const workers = await db.workforceMember.findMany({ where: { tenantId, id: { in: presentIds }, active: true } });
+    const workers = await db.workforceMember.findMany({ where: { tenantId, id: { in: presentIds }, active: true, ...farmWhere(scope) } });
+    if (!workers.length) fail("None of the ticked workers are active workers on your farms");
     const status = can(role, "workforce.manage") ? TimesheetStatus.APPROVED : TimesheetStatus.SUBMITTED;
     const dayStart = new Date(workDate); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
@@ -96,10 +99,10 @@ export async function recordAttendanceAction(form: FormData) {
 
 export async function bulkApproveTimesheetsAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("workforce.manage");
+    const { tenantId, scope } = await context("workforce.manage");
     const ids = form.getAll("id").map(String);
     const status = z.enum(["APPROVED", "REJECTED"]).parse(text(form, "status") || "APPROVED");
-    const where = ids.length ? { tenantId, id: { in: ids }, status: TimesheetStatus.SUBMITTED } : { tenantId, status: TimesheetStatus.SUBMITTED };
+    const where = { tenantId, status: TimesheetStatus.SUBMITTED, ...farmWhere(scope), ...(ids.length ? { id: { in: ids } } : {}) };
     const result = await db.timesheet.updateMany({ where, data: { status } });
     await audit("timesheet.bulk_status", "Timesheet", undefined, { status, count: result.count });
     revalidatePath("/workforce");
@@ -110,9 +113,9 @@ export async function bulkApproveTimesheetsAction(form: FormData) {
 
 export async function createAdvanceAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId, userId } = await context("workforce.manage");
+    const { tenantId, userId, scope } = await context("workforce.manage");
     const workerId = text(form, "workerId");
-    if (!(await db.workforceMember.findFirst({ where: { id: workerId, tenantId }, select: { id: true } }))) fail("Select a worker");
+    if (!(await db.workforceMember.findFirst({ where: { id: workerId, tenantId, ...farmWhere(scope) }, select: { id: true } }))) fail("Select a worker");
     const accountId = optional(form, "accountId");
     if (accountId && !(await db.moneyAccount.findFirst({ where: { id: accountId, tenantId }, select: { id: true } }))) fail("Account not found");
     const advance = await db.workerAdvance.create({ data: { tenantId, workerId, accountId, amount: z.number().positive().parse(numberValue(form, "amount")), issuedAt: dateValue(form, "issuedAt") || new Date(), reason: optional(form, "reason"), createdById: userId } });
@@ -136,7 +139,8 @@ function monthsInPeriod(start: Date, end: Date) {
 export async function createPayRunAction(form: FormData) {
   let payRunId = "";
   const result = await attempt(async () => {
-    const { tenantId, userId } = await context("workforce.manage");
+    const { tenantId, userId, scope } = await context("workforce.manage");
+    assertOrganisationWide(scope, "payroll");
     const periodStart = dateValue(form, "periodStart");
     const periodEnd = dateValue(form, "periodEnd");
     if (!periodStart || !periodEnd || periodEnd < periodStart) fail("Choose a valid pay period");
@@ -190,7 +194,8 @@ export async function createPayRunAction(form: FormData) {
 
 export async function updatePayRunLineAction(form: FormData) {
   return attempt(async () => {
-    const { tenantId } = await context("workforce.manage");
+    const { tenantId, scope } = await context("workforce.manage");
+    assertOrganisationWide(scope, "payroll");
     const id = text(form, "id");
     const line = await db.payRunLine.findFirst({ where: { id, tenantId }, include: { payRun: { select: { status: true } } } });
     if (!line || line.payRun.status !== PayRunStatus.DRAFT) fail("Only draft pay runs can be edited");
@@ -209,7 +214,8 @@ export async function setPayRunStatusAction(form: FormData) {
   return attempt(async () => {
     const id = text(form, "id");
     const status = z.nativeEnum(PayRunStatus).parse(text(form, "status"));
-    const { tenantId, userId } = await context(status === "PAID" ? "finance.manage" : "workforce.manage");
+    const { tenantId, userId, scope } = await context(status === "PAID" ? "finance.manage" : "workforce.manage");
+    assertOrganisationWide(scope, "payroll");
     const run = await db.payRun.findFirst({ where: { id, tenantId }, include: { lines: true } });
     if (!run) fail("Pay run not found");
     const transitions: Record<PayRunStatus, PayRunStatus[]> = { DRAFT: ["APPROVED", "CANCELLED"], APPROVED: ["PAID", "DRAFT", "CANCELLED"], PAID: [], CANCELLED: [] };
@@ -253,10 +259,28 @@ export async function changeMemberRoleAction(form: FormData) {
     if (!member) fail("Member not found");
     if ((member.role === Role.OWNER || role === Role.OWNER) && actorRole !== Role.OWNER) fail("Only an owner can grant or change owner access");
     if (member.role === Role.OWNER && role !== Role.OWNER && (await ownerCount(tenantId)) <= 1) fail("The organization must keep at least one owner");
-    await db.membership.update({ where: { id }, data: { role } });
+    await db.membership.update({ where: { id }, data: { role, ...(role === Role.OWNER ? { farmScope: [] } : {}) } });
     await audit("membership.role", "Membership", id, { role, by: userId });
     revalidatePath("/team");
     return "Role updated";
+  });
+}
+
+/** Limits a member to selected farms; no farms selected means access to every farm in the organization. */
+export async function updateMemberFarmScopeAction(form: FormData) {
+  return attempt(async () => {
+    const { tenantId, userId } = await context("team.manage");
+    const id = text(form, "id");
+    const farmIds = [...new Set(form.getAll("farmIds").map(String).filter(Boolean))];
+    const member = await db.membership.findFirst({ where: { id, tenantId } });
+    if (!member) fail("Member not found");
+    if (member.userId === userId) fail("You cannot change your own farm access");
+    if (member.role === Role.OWNER && farmIds.length) fail("Owners always have access to all farms");
+    if (farmIds.length && (await db.farm.count({ where: { tenantId, id: { in: farmIds } } })) !== farmIds.length) fail("One of the selected farms no longer exists");
+    await db.membership.update({ where: { id }, data: { farmScope: farmIds } });
+    await audit("membership.farm_scope", "Membership", id, { farmScope: farmIds, by: userId });
+    revalidatePath("/team");
+    return farmIds.length ? `Access limited to ${farmIds.length} farm${farmIds.length === 1 ? "" : "s"}` : "Access to all farms restored";
   });
 }
 

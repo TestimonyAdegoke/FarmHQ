@@ -13,7 +13,7 @@ export const metadata = { title: "Menu" };
 export default async function MenuPage() {
   const ctx = await tenantContext();
   const memberships = await db.membership.findMany({ where: { userId: ctx.userId }, include: { tenant: { select: { name: true } } }, orderBy: { createdAt: "asc" } });
-  const groups = visibleNavGroups(ctx.can);
+  const groups = visibleNavGroups(ctx.can, ctx.scope.limited);
   return <>
     <PageHeader eyebrow={ctx.tenant.name} title="Everything in FarmHQ" />
     {groups.map(group => <section className="menu-group" key={group.label}>
