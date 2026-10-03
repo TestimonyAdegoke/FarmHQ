@@ -1,0 +1,251 @@
+// v0.5 — invoicing, receivables/payables, money accounts, payroll and account recovery.
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+  BANK_TRANSFER
+  POS_CARD
+  CHEQUE
+  OTHER
+}
+
+enum MoneyAccountType {
+  CASH
+  BANK
+  MOBILE_MONEY
+  OTHER
+}
+
+enum PayBasis {
+  HOURLY
+  DAILY
+  MONTHLY
+  PIECE_RATE
+}
+
+enum PayRunStatus {
+  DRAFT
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+// Where money physically sits: cash box, bank account, mobile-money wallet.
+model MoneyAccount {
+  id              String           @id @default(cuid())
+  tenantId        String
+  name            String
+  type            MoneyAccountType @default(CASH)
+  provider        String?
+  accountNumber   String?
+  openingBalance  Decimal          @default(0) @db.Decimal(16, 2)
+  active          Boolean          @default(true)
+  paymentsReceived PaymentReceived[]
+  vendorPayments  VendorPayment[]
+  expenses        Expense[]
+  transfersOut    AccountTransfer[] @relation("TransferFrom")
+  transfersIn     AccountTransfer[] @relation("TransferTo")
+  advances        WorkerAdvance[]
+  payRuns         PayRun[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+}
+
+model AccountTransfer {
+  id            String       @id @default(cuid())
+  tenantId      String
+  fromAccountId String
+  toAccountId   String
+  amount        Decimal      @db.Decimal(16, 2)
+  transferredAt DateTime     @default(now())
+  reference     String?
+  notes         String?
+  createdById   String
+  fromAccount   MoneyAccount @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccount     MoneyAccount @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+  createdAt     DateTime     @default(now())
+
+  @@index([tenantId, transferredAt])
+}
+
+model Invoice {
+  id           String          @id @default(cuid())
+  tenantId     String
+  invoiceNo    String
+  customerId   String
+  salesOrderId String?         @unique
+  farmId       String?
+  cycleId      String?
+  status       InvoiceStatus   @default(ISSUED)
+  issueDate    DateTime        @default(now())
+  dueDate      DateTime?
+  subtotal     Decimal         @db.Decimal(16, 2)
+  discount     Decimal         @default(0) @db.Decimal(16, 2)
+  tax          Decimal         @default(0) @db.Decimal(16, 2)
+  total        Decimal         @db.Decimal(16, 2)
+  amountPaid   Decimal         @default(0) @db.Decimal(16, 2)
+  notes        String?
+  createdById  String
+  voidedAt     DateTime?
+  customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  salesOrder   SalesOrder?     @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
+  payments     PaymentReceived[]
+  revenues     Revenue[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([tenantId, invoiceNo])
+  @@index([tenantId, status, dueDate])
+  @@index([customerId])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  tenantId    String
+  invoiceId   String
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(14, 3)
+  unit        String
+  unitPrice   Decimal  @db.Decimal(16, 4)
+  lineTotal   Decimal  @db.Decimal(16, 2)
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+}
+
+model PaymentReceived {
+  id          String        @id @default(cuid())
+  tenantId    String
+  receiptNo   String
+  customerId  String
+  invoiceId   String?
+  accountId   String?
+  amount      Decimal       @db.Decimal(16, 2)
+  method      PaymentMethod @default(CASH)
+  reference   String?
+  receivedAt  DateTime      @default(now())
+  notes       String?
+  createdById String
+  customer    Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  invoice     Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  account     MoneyAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+
+  @@unique([tenantId, receiptNo])
+  @@index([tenantId, receivedAt])
+  @@index([customerId])
+  @@index([invoiceId])
+}
+
+model VendorPayment {
+  id              String         @id @default(cuid())
+  tenantId        String
+  vendorId        String
+  purchaseOrderId String?
+  accountId       String?
+  amount          Decimal        @db.Decimal(16, 2)
+  method          PaymentMethod  @default(CASH)
+  reference       String?
+  paidAt          DateTime       @default(now())
+  notes           String?
+  createdById     String
+  vendor          Vendor         @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  account         MoneyAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+
+  @@index([tenantId, paidAt])
+  @@index([vendorId])
+  @@index([purchaseOrderId])
+}
+
+// Salary/wage advances are extremely common on farms; they are recovered in a later pay run.
+model WorkerAdvance {
+  id          String          @id @default(cuid())
+  tenantId    String
+  workerId    String
+  accountId   String?
+  amount      Decimal         @db.Decimal(16, 2)
+  issuedAt    DateTime        @default(now())
+  reason      String?
+  payRunId    String?
+  createdById String
+  worker      WorkforceMember @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  account     MoneyAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  payRun      PayRun?         @relation(fields: [payRunId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+
+  @@index([tenantId, workerId])
+  @@index([payRunId])
+}
+
+model PayRun {
+  id          String        @id @default(cuid())
+  tenantId    String
+  runNo       String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      PayRunStatus  @default(DRAFT)
+  accountId   String?
+  paidAt      DateTime?
+  notes       String?
+  createdById String
+  account     MoneyAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  lines       PayRunLine[]
+  timesheets  Timesheet[]
+  advances    WorkerAdvance[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([tenantId, runNo])
+  @@index([tenantId, status])
+}
+
+model PayRunLine {
+  id              String          @id @default(cuid())
+  tenantId        String
+  payRunId        String
+  workerId        String
+  basis           PayBasis
+  units           Decimal         @default(0) @db.Decimal(12, 2)
+  grossPay        Decimal         @db.Decimal(16, 2)
+  allowances      Decimal         @default(0) @db.Decimal(16, 2)
+  deductions      Decimal         @default(0) @db.Decimal(16, 2)
+  advanceRecovery Decimal         @default(0) @db.Decimal(16, 2)
+  netPay          Decimal         @db.Decimal(16, 2)
+  paymentMethod   PaymentMethod?
+  notes           String?
+  payRun          PayRun          @relation(fields: [payRunId], references: [id], onDelete: Cascade)
+  worker          WorkforceMember @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([payRunId, workerId])
+  @@index([tenantId, workerId])
+}
+
+// Admin-issued, single-use password reset links. Only a SHA-256 hash of the token is stored.
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+}

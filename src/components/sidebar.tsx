@@ -1,63 +1,26 @@
 import Link from "next/link";
-import { BarChart3, BellRing, Bird, Boxes, ClipboardCheck, CloudSun, Cog, DollarSign, FileCheck2, Fish, Grid3X3, HardHat, LayoutDashboard, Leaf, MapPinned, PackageOpen, PackageSearch, QrCode, RadioTower, ShoppingBag, ShoppingCart, Smartphone, Sprout, Tractor, TrendingUp, Users, Warehouse } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { Brand } from "@/components/brand";
+import { NavLinks } from "@/components/nav-links";
 import { logoutAction, switchTenantAction } from "@/app/actions";
+import type { NavGroup } from "@/lib/navigation";
 
-const links = [
-  ["/dashboard", "Overview", LayoutDashboard],
-  ["/farms", "Farms", Sprout],
-  ["/fields", "Fields & Units", Grid3X3],
-  ["/maps", "Farm Maps", MapPinned],
-  ["/weather", "Weather", CloudSun],
-  ["/production", "Production", BarChart3],
-  ["/crop-operations", "Crop Operations", Leaf],
-  ["/poultry", "Poultry", Bird],
-  ["/aquaculture", "Aquaculture", Fish],
-  ["/livestock", "Livestock", PackageOpen],
-  ["/tasks", "Work & Tasks", ClipboardCheck],
-  ["/inventory", "Inventory", Warehouse],
-  ["/stock-control", "Stock Control", PackageSearch],
-  ["/traceability", "Traceability", QrCode],
-  ["/procurement", "Procurement", ShoppingCart],
-  ["/sales", "Sales", ShoppingBag],
-  ["/finance", "Finance", DollarSign],
-  ["/profitability", "Profitability", TrendingUp],
-  ["/equipment", "Equipment", Tractor],
-  ["/workforce", "Workforce", HardHat],
-  ["/compliance", "Compliance", FileCheck2],
-  ["/iot", "IoT & Sensors", RadioTower],
-  ["/field", "Field App", Smartphone],
-  ["/automations", "Automations", BellRing],
-  ["/team", "Team", Users],
-  ["/analytics", "Analytics", Boxes],
-  ["/settings", "Settings", Cog],
-] as const;
-
-export function Sidebar({ userName, userEmail, tenantName, tenantId, memberships }: {
+export function Sidebar({ userName, userEmail, tenantName, tenantId, memberships, groups }: {
   userName:string; userEmail:string; tenantName:string; tenantId:string;
   memberships:{ tenantId:string; tenant:{ name:string }; role:string }[];
+  groups: NavGroup[];
 }) {
   return <aside className="sidebar">
     <Brand />
     {memberships.length > 1 ? <form action={switchTenantAction} style={{padding:"0 8px 15px"}}>
-      <select className="tenant-select" name="tenantId" defaultValue={tenantId}>
+      <select className="tenant-select" name="tenantId" defaultValue={tenantId} aria-label="Workspace">
         {memberships.map(m => <option value={m.tenantId} key={m.tenantId}>{m.tenant.name}</option>)}
       </select><button className="button small" style={{width:"100%",marginTop:7}}>Switch workspace</button>
     </form> : <div style={{padding:"0 12px 16px", color:"#91a99a", fontSize:12}}>{tenantName}</div>}
-    <nav className="nav">{links.map(([href,label,Icon]) => <Link href={href} key={href}><Icon size={17}/>{label}</Link>)}</nav>
+    <NavLinks groups={groups} />
     <div className="sidebar-bottom">
-      <div className="user-chip"><strong>{userName}</strong><small>{userEmail}</small></div>
+      <Link href="/profile" className="user-chip"><UserRound size={16}/><span><strong>{userName}</strong><small>{userEmail}</small></span></Link>
       <form action={logoutAction}><button className="button secondary small" style={{width:"100%"}}>Sign out</button></form>
     </div>
   </aside>;
-}
-
-export function MobileNav() {
-  return <nav className="mobile-nav">
-    <Link href="/dashboard"><LayoutDashboard size={18}/><span>Home</span></Link>
-    <Link href="/farms"><Sprout size={18}/><span>Farms</span></Link>
-    <Link href="/tasks"><ClipboardCheck size={18}/><span>Tasks</span></Link>
-    <Link href="/inventory"><Warehouse size={18}/><span>Stock</span></Link>
-    <Link href="/settings"><Cog size={18}/><span>More</span></Link>
-  </nav>;
 }

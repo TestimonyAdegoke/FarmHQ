@@ -6,11 +6,12 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { tenantContext } from "@/lib/tenant";
 import { formatNumber, safeDate } from "@/lib/utils";
+import { ActionForm } from "@/components/action-form";
 
 export const metadata = { title: "IoT & Sensors" };
 
 export default async function IotPage() {
-  const ctx = await tenantContext();
+  const ctx = await tenantContext("farm.view");
   const [farms, units, devices, readings] = await Promise.all([
     db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
     db.productionUnit.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
@@ -31,7 +32,7 @@ export default async function IotPage() {
       <MetricCard label="Authentication" value="Hashed" hint="Device secrets are never stored in plaintext" icon={<ShieldCheck size={18}/>}/>
     </section>
 
-    <form className="form-card" action={createIotDeviceAction}>
+    <ActionForm className="form-card" action={createIotDeviceAction}>
       <div className="card-head"><div><h3>Provision device</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Choose and securely store a 16+ character secret on the device. FarmHQ stores only its SHA-256 hash.</div></div><RadioTower size={19}/></div>
       <div className="form-grid">
         <div className="field"><label>Name</label><input name="name" required placeholder="North Field Soil Probe"/></div>
@@ -42,10 +43,10 @@ export default async function IotPage() {
         <div className="field"><label>Device secret</label><input name="secret" required minLength={16} autoComplete="new-password" placeholder="16+ chars; store on device"/></div>
       </div>
       <div className="form-actions"><button className="button" disabled={!farms.length}>Provision device</button></div>
-    </form>
+    </ActionForm>
 
     <div className="grid-2">
-      <div className="card"><div className="card-head"><h2>Devices</h2></div>{devices.length?<div className="table-wrap"><table><thead><tr><th>Device</th><th>Location</th><th>Last seen</th><th>Status</th></tr></thead><tbody>{devices.map(d=><tr key={d.id}><td><b>{d.name}</b><div className="muted" style={{fontSize:12}}>{d.code} · {d.kind.replaceAll("_"," ")}</div><div className="muted" style={{fontSize:11,marginTop:3}}>ID: {d.id}</div></td><td>{farmNames.get(d.farmId)||"—"}<div className="muted" style={{fontSize:12}}>{d.unitId?unitNames.get(d.unitId)||"":""}</div></td><td>{safeDate(d.lastSeenAt)}</td><td><form action={toggleIotDeviceAction}><input type="hidden" name="id" value={d.id}/><button className={"button small "+(d.active?"secondary":"")}>{d.active?"Active":"Disabled"}</button></form></td></tr>)}</tbody></table></div>:<EmptyState title="No devices" text="Provision the first sensor or telemetry gateway above."/>}</div>
+      <div className="card"><div className="card-head"><h2>Devices</h2></div>{devices.length?<div className="table-wrap"><table><thead><tr><th>Device</th><th>Location</th><th>Last seen</th><th>Status</th></tr></thead><tbody>{devices.map(d=><tr key={d.id}><td><b>{d.name}</b><div className="muted" style={{fontSize:12}}>{d.code} · {d.kind.replaceAll("_"," ")}</div><div className="muted" style={{fontSize:11,marginTop:3}}>ID: {d.id}</div></td><td>{farmNames.get(d.farmId)||"—"}<div className="muted" style={{fontSize:12}}>{d.unitId?unitNames.get(d.unitId)||"":""}</div></td><td>{safeDate(d.lastSeenAt)}</td><td><ActionForm action={toggleIotDeviceAction}><input type="hidden" name="id" value={d.id}/><button className={"button small "+(d.active?"secondary":"")}>{d.active?"Active":"Disabled"}</button></ActionForm></td></tr>)}</tbody></table></div>:<EmptyState title="No devices" text="Provision the first sensor or telemetry gateway above."/>}</div>
       <div className="card"><div className="card-head"><div><h2>Ingestion contract</h2><div className="muted" style={{fontSize:13,marginTop:4}}>POST JSON to the telemetry endpoint.</div></div></div><pre style={{whiteSpace:"pre-wrap",fontSize:12,lineHeight:1.7,background:"var(--surface-2)",padding:14,borderRadius:12}}>{"POST /api/iot/ingest\nx-farmhq-device-id: <device id>\nx-farmhq-token: <device secret>\n\n{\n  \"readings\": [\n    {\n      \"metric\": \"soil_moisture\",\n      \"value\": 28.7,\n      \"unit\": \"%\",\n      \"recordedAt\": \"2026-10-03T07:00:00Z\"\n    }\n  ]\n}"}</pre></div>
     </div>
 

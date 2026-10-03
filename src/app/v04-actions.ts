@@ -7,6 +7,7 @@ import { TraceEventType, TraceLotStatus, IotDeviceKind } from "@/generated/prism
 import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
+import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
   return String(form.get(key) || "").trim();
@@ -26,7 +27,7 @@ function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export async function createTraceLotAction(form: FormData) {
+async function createTraceLotActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
 
@@ -89,7 +90,7 @@ export async function createTraceLotAction(form: FormData) {
   revalidatePath("/traceability");
 }
 
-export async function createTraceEventAction(form: FormData) {
+async function createTraceEventActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage") && !can(membership.role, "sales.manage")) throw new Error("Forbidden");
   const lotId = text(form, "lotId");
@@ -125,7 +126,7 @@ export async function createTraceEventAction(form: FormData) {
   revalidatePath("/traceability");
 }
 
-export async function updateTraceLotStatusAction(form: FormData) {
+async function updateTraceLotStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -137,7 +138,7 @@ export async function updateTraceLotStatusAction(form: FormData) {
   revalidatePath("/traceability");
 }
 
-export async function createIotDeviceAction(form: FormData) {
+async function createIotDeviceActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage") && !can(membership.role, "equipment.manage")) throw new Error("Forbidden");
 
@@ -165,7 +166,7 @@ export async function createIotDeviceAction(form: FormData) {
   revalidatePath("/iot");
 }
 
-export async function toggleIotDeviceAction(form: FormData) {
+async function toggleIotDeviceActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage") && !can(membership.role, "equipment.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -174,4 +175,27 @@ export async function toggleIotDeviceAction(form: FormData) {
   await db.iotDevice.update({ where: { id }, data: { active: !device.active } });
   await audit("iot_device.toggle", "IotDevice", id, { active: !device.active });
   revalidatePath("/iot");
+}
+
+
+// Public actions return { ok, error } so forms can show a readable message instead of a crashed page.
+
+export async function createTraceLotAction(form: FormData) {
+  return attempt(async () => { await createTraceLotActionImpl(form); });
+}
+
+export async function createTraceEventAction(form: FormData) {
+  return attempt(async () => { await createTraceEventActionImpl(form); });
+}
+
+export async function updateTraceLotStatusAction(form: FormData) {
+  return attempt(async () => { await updateTraceLotStatusActionImpl(form); });
+}
+
+export async function createIotDeviceAction(form: FormData) {
+  return attempt(async () => { await createIotDeviceActionImpl(form); });
+}
+
+export async function toggleIotDeviceAction(form: FormData) {
+  return attempt(async () => { await toggleIotDeviceActionImpl(form); });
 }

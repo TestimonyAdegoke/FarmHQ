@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./workspace.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 

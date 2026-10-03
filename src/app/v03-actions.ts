@@ -12,6 +12,7 @@ import {
 import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
+import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
   return String(form.get(key) || "").trim();
@@ -52,7 +53,7 @@ async function warehouseStock(tenantId: string, warehouseId: string, productId: 
   }, 0);
 }
 
-export async function updateFarmCoordinatesAction(form: FormData) {
+async function updateFarmCoordinatesActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -66,7 +67,7 @@ export async function updateFarmCoordinatesAction(form: FormData) {
   revalidatePath("/weather");
 }
 
-export async function saveUnitGeometryAction(form: FormData) {
+async function saveUnitGeometryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
   const unitId = text(form, "unitId");
@@ -99,7 +100,7 @@ export async function saveUnitGeometryAction(form: FormData) {
   revalidatePath("/fields");
 }
 
-export async function transferInventoryAction(form: FormData) {
+async function transferInventoryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const fromWarehouseId = text(form, "fromWarehouseId");
@@ -148,7 +149,7 @@ export async function transferInventoryAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createStockCountAction(form: FormData) {
+async function createStockCountActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
@@ -200,7 +201,7 @@ export async function createStockCountAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createComplianceRecordAction(form: FormData) {
+async function createComplianceRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage") && !can(membership.role, "production.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -224,7 +225,7 @@ export async function createComplianceRecordAction(form: FormData) {
   revalidatePath("/compliance");
 }
 
-export async function createChemicalApplicationAction(form: FormData) {
+async function createChemicalApplicationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -259,7 +260,7 @@ export async function createChemicalApplicationAction(form: FormData) {
   revalidatePath("/compliance");
 }
 
-export async function createDocumentRecordAction(form: FormData) {
+async function createDocumentRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -281,7 +282,7 @@ export async function createDocumentRecordAction(form: FormData) {
   revalidatePath("/compliance");
 }
 
-export async function createAutomationRuleAction(form: FormData) {
+async function createAutomationRuleActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const rule = await db.automationRule.create({
@@ -306,7 +307,7 @@ async function notificationExists(tenantId: string, ruleId: string, entityType: 
   });
 }
 
-export async function runAutomationRulesAction() {
+async function runAutomationRulesActionImpl() {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const rules = await db.automationRule.findMany({ where: { tenantId: session.tenantId, active: true } });
@@ -392,11 +393,54 @@ export async function runAutomationRulesAction() {
   revalidatePath("/dashboard");
 }
 
-export async function markNotificationReadAction(form: FormData) {
+async function markNotificationReadActionImpl(form: FormData) {
   const { session } = await requireSession();
   const id = text(form, "id");
   const notification = await db.notification.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
   if (!notification) throw new Error("Notification not found");
   await db.notification.update({ where: { id }, data: { readAt: new Date() } });
   revalidatePath("/automations");
+}
+
+
+// Public actions return { ok, error } so forms can show a readable message instead of a crashed page.
+
+export async function updateFarmCoordinatesAction(form: FormData) {
+  return attempt(async () => { await updateFarmCoordinatesActionImpl(form); });
+}
+
+export async function saveUnitGeometryAction(form: FormData) {
+  return attempt(async () => { await saveUnitGeometryActionImpl(form); });
+}
+
+export async function transferInventoryAction(form: FormData) {
+  return attempt(async () => { await transferInventoryActionImpl(form); });
+}
+
+export async function createStockCountAction(form: FormData) {
+  return attempt(async () => { await createStockCountActionImpl(form); });
+}
+
+export async function createComplianceRecordAction(form: FormData) {
+  return attempt(async () => { await createComplianceRecordActionImpl(form); });
+}
+
+export async function createChemicalApplicationAction(form: FormData) {
+  return attempt(async () => { await createChemicalApplicationActionImpl(form); });
+}
+
+export async function createDocumentRecordAction(form: FormData) {
+  return attempt(async () => { await createDocumentRecordActionImpl(form); });
+}
+
+export async function createAutomationRuleAction(form: FormData) {
+  return attempt(async () => { await createAutomationRuleActionImpl(form); });
+}
+
+export async function runAutomationRulesAction() {
+  return attempt(async () => { await runAutomationRulesActionImpl(); });
+}
+
+export async function markNotificationReadAction(form: FormData) {
+  return attempt(async () => { await markNotificationReadActionImpl(form); });
 }

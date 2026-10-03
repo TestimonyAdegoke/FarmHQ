@@ -35,6 +35,8 @@ enum OfflineMutationType {
   SCOUTING_OBSERVATION
   TASK_STATUS
   CROP_ACTIVITY_STATUS
+  POULTRY_DAILY_RECORD
+  ATTENDANCE
 }
 
 enum OfflineMutationStatus {

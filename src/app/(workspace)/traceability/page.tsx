@@ -8,11 +8,12 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { tenantContext } from "@/lib/tenant";
 import { formatNumber, safeDate } from "@/lib/utils";
+import { ActionForm } from "@/components/action-form";
 
 export const metadata = { title: "Traceability" };
 
 export default async function TraceabilityPage() {
-  const ctx = await tenantContext();
+  const ctx = await tenantContext("inventory.view");
   const [lots, products, farms, cycles, harvests, warehouses] = await Promise.all([
     db.traceLot.findMany({ where: { tenantId: ctx.tenantId }, include: { events: { orderBy: { occurredAt: "desc" }, take: 5 }, children: { select: { id: true, lotCode: true } }, parent: { select: { id: true, lotCode: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
     db.product.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } }),
@@ -37,7 +38,7 @@ export default async function TraceabilityPage() {
     </section>
 
     <div className="grid-2" style={{marginBottom:20}}>
-      <form className="form-card" action={createTraceLotAction} style={{margin:0}}>
+      <ActionForm className="form-card" action={createTraceLotAction} style={{margin:0}}>
         <div className="card-head"><div><h3>Create trace lot</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Every lot receives a non-guessable public trace token and QR endpoint.</div></div><Plus size={19}/></div>
         <div className="form-grid two">
           <div className="field"><label>Lot code</label><input name="lotCode" required placeholder="MAIZE-26-001"/></div>
@@ -55,9 +56,9 @@ export default async function TraceabilityPage() {
           <div className="field span-2"><label>Notes</label><input name="notes"/></div>
         </div>
         <div className="form-actions"><button className="button">Create lot</button></div>
-      </form>
+      </ActionForm>
 
-      <form className="form-card" action={createTraceEventAction} style={{margin:0}}>
+      <ActionForm className="form-card" action={createTraceEventAction} style={{margin:0}}>
         <div className="card-head"><div><h3>Add chain event</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Record handling, inspection, movement, sale and delivery without rewriting history.</div></div><GitBranch size={19}/></div>
         <div className="form-grid two">
           <div className="field span-2"><label>Lot</label><select name="lotId" required defaultValue=""><option value="" disabled>Select lot</option>{lots.map(l=><option key={l.id} value={l.id}>{l.lotCode}</option>)}</select></div>
@@ -71,7 +72,7 @@ export default async function TraceabilityPage() {
           <div className="field span-2"><label>Notes</label><input name="notes"/></div>
         </div>
         <div className="form-actions"><button className="button" disabled={!lots.length}>Add event</button></div>
-      </form>
+      </ActionForm>
     </div>
 
     {lots.length ? <div style={{display:"grid",gap:14}}>{lots.map(lot=><div className="card" key={lot.id}>
@@ -80,7 +81,7 @@ export default async function TraceabilityPage() {
         <div>
           <div className="card-head" style={{marginBottom:10}}><div><h2 style={{margin:0}}>{lot.lotCode}</h2><div className="muted" style={{fontSize:13,marginTop:4}}>{lot.productId?productNames.get(lot.productId)||"Catalog product":"Uncatalogued"} · {lot.farmId?farmNames.get(lot.farmId)||"Farm":"No farm"}{lot.cycleId?" · "+(cycleNames.get(lot.cycleId)||"Cycle"):""}</div></div><span className={"status "+(lot.status==="QUARANTINED"?"warn":"")}>{lot.status}</span></div>
           <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13}}><span><b>{lot.quantity!=null?formatNumber(lot.quantity,3):"—"}</b> {lot.unit||""}</span><span>Grade: <b>{lot.grade||"—"}</b></span><span>Harvest: <b>{safeDate(lot.harvestedAt)}</b></span>{lot.parent?<span>Parent: <b>{lot.parent.lotCode}</b></span>:null}{lot.children.length?<span>Children: <b>{lot.children.map(c=>c.lotCode).join(", ")}</b></span>:null}</div>
-          <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><Link className="button secondary small" href={"/trace/"+lot.publicToken} target="_blank">Open public trace</Link><form action={updateTraceLotStatusAction} style={{display:"flex",gap:6}}><input type="hidden" name="id" value={lot.id}/><select name="status" defaultValue={lot.status} style={{minWidth:125}}>{["ACTIVE","QUARANTINED","RELEASED","CONSUMED","SOLD","CLOSED"].map(v=><option key={v}>{v}</option>)}</select><button className="button secondary small">Update</button></form></div>
+          <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><Link className="button secondary small" href={"/trace/"+lot.publicToken} target="_blank">Open public trace</Link><ActionForm action={updateTraceLotStatusAction} style={{display:"flex",gap:6}}><input type="hidden" name="id" value={lot.id}/><select name="status" defaultValue={lot.status} style={{minWidth:125}}>{["ACTIVE","QUARANTINED","RELEASED","CONSUMED","SOLD","CLOSED"].map(v=><option key={v}>{v}</option>)}</select><button className="button secondary small">Update</button></ActionForm></div>
           {lot.events.length?<div style={{marginTop:14,display:"flex",gap:8,flexWrap:"wrap"}}>{lot.events.map(e=><span className="status neutral" key={e.id}>{safeDate(e.occurredAt)} · {e.type.replaceAll("_"," ")}</span>)}</div>:null}
         </div>
       </div>

@@ -8,13 +8,14 @@ import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
 import { tenantContext } from "@/lib/tenant";
 import { formatNumber, safeDate } from "@/lib/utils";
+import { ActionForm } from "@/components/action-form";
 
 export const metadata = { title: "Stock Control" };
 
 const negative = new Set(["ISSUE","TRANSFER_OUT","ADJUSTMENT_OUT","SALE","WASTE"]);
 
 export default async function StockControlPage({ searchParams }: { searchParams: Promise<{ sessionId?:string }> }) {
-  const ctx = await tenantContext();
+  const ctx = await tenantContext("inventory.view");
   const query = await searchParams;
   const [warehouses, products, txns, sessions, legacyCounts] = await Promise.all([
     db.warehouse.findMany({ where: { tenantId: ctx.tenantId, active: true }, include: { farm: true }, orderBy: { name: "asc" } }),
@@ -50,7 +51,7 @@ export default async function StockControlPage({ searchParams }: { searchParams:
     </section>
 
     <div className="grid-2" style={{marginBottom:20}}>
-      <form className="form-card" action={transferInventoryAction} style={{margin:0}}>
+      <ActionForm className="form-card" action={transferInventoryAction} style={{margin:0}}>
         <div className="card-head"><div><h3>Transfer stock</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Posts matched transfer-out and transfer-in ledger entries.</div></div><ArrowRightLeft size={19}/></div>
         <div className="field"><label>Product</label><select name="productId" required defaultValue=""><option value="" disabled>Select product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
         <div className="form-grid two" style={{marginTop:14}}>
@@ -60,14 +61,14 @@ export default async function StockControlPage({ searchParams }: { searchParams:
           <div className="field"><label>Reference</label><input name="reference" placeholder="Internal transfer no."/></div>
         </div>
         <div className="form-actions"><button className="button" disabled={warehouses.length<2||!products.length}>Transfer stock</button></div>
-      </form>
+      </ActionForm>
 
-      <form className="form-card" action={createStockCountSessionAction} style={{margin:0}}>
+      <ActionForm className="form-card" action={createStockCountSessionAction} style={{margin:0}}>
         <div className="card-head"><div><h3>Start stock count</h3><div className="muted" style={{fontSize:13,marginTop:4}}>Counts remain open until reviewed; no inventory adjustment is posted before closure.</div></div><ClipboardCheck size={19}/></div>
         <div className="field"><label>Warehouse</label><select name="warehouseId" required defaultValue=""><option value="" disabled>Select warehouse</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></div>
         <div className="field" style={{marginTop:14}}><label>Notes</label><input name="notes" placeholder="Month-end count / spot check"/></div>
         <div className="form-actions"><button className="button" disabled={!warehouses.length}>Start count session</button></div>
-      </form>
+      </ActionForm>
     </div>
 
     <div className="card" style={{marginBottom:20}}>
@@ -76,7 +77,7 @@ export default async function StockControlPage({ searchParams }: { searchParams:
     </div>
 
     {selected?<div className="grid-2" style={{marginBottom:20}}>
-      <form className="form-card" action={addStockCountLineAction} style={{margin:0}}>
+      <ActionForm className="form-card" action={addStockCountLineAction} style={{margin:0}}>
         <div className="card-head"><div><h3>{selected.sessionNo}</h3><div className="muted" style={{fontSize:13,marginTop:4}}>{warehouseNames.get(selected.warehouseId)||"Warehouse"} · started {safeDate(selected.startedAt)}</div></div><span className={"status "+(selected.status==="OPEN"?"neutral":"")}>{selected.status}</span></div>
         <input type="hidden" name="sessionId" value={selected.id}/>
         <div className="form-grid two">
@@ -86,12 +87,12 @@ export default async function StockControlPage({ searchParams }: { searchParams:
           <div className="field"><label>Notes</label><input name="notes"/></div>
         </div>
         <div className="form-actions"><button className="button" disabled={selected.status!=="OPEN"}>Save count line</button></div>
-      </form>
+      </ActionForm>
       <div className="card">
         <div className="card-head"><div><h3>Session controls</h3><div className="muted" style={{fontSize:13,marginTop:4}}>{selected.lines.length} product line(s) · {formatNumber(selectedVariance,3)} absolute variance</div></div></div>
         {selected.status==="OPEN"?<div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <form action={closeStockCountSessionAction}><input type="hidden" name="id" value={selected.id}/><button className="button" disabled={!selected.lines.length}>Close & post adjustments</button></form>
-          <form action={cancelStockCountSessionAction}><input type="hidden" name="id" value={selected.id}/><button className="button secondary">Cancel session</button></form>
+          <ActionForm action={closeStockCountSessionAction}><input type="hidden" name="id" value={selected.id}/><button className="button" disabled={!selected.lines.length}>Close & post adjustments</button></ActionForm>
+          <ActionForm action={cancelStockCountSessionAction}><input type="hidden" name="id" value={selected.id}/><button className="button secondary">Cancel session</button></ActionForm>
         </div>:<div className="alert"><div><b>Session {selected.status.toLowerCase()}</b><small>{selected.closedAt?"Closed "+safeDate(selected.closedAt):"No further changes are allowed."}</small></div></div>}
       </div>
     </div>:null}

@@ -231,7 +231,9 @@ model User {
   email        String       @unique
   name         String
   passwordHash String
+  phone        String?      @unique
   memberships  Membership[]
+  passwordResets PasswordResetToken[]
   tasksCreated Task[]       @relation("TaskCreator")
   tasksAssigned Task[]      @relation("TaskAssignee")
   auditLogs    AuditLog[]
@@ -452,9 +454,11 @@ model Product {
   unit        String
   reorderLevel Decimal?   @db.Decimal(14, 3)
   standardCost Decimal?   @db.Decimal(16, 4)
+  sellingPrice Decimal?   @db.Decimal(16, 4)
   active      Boolean     @default(true)
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   inventoryTxns InventoryTransaction[]
+  invoiceItems InvoiceItem[]
   purchaseRequestItems PurchaseRequestItem[]
   purchaseOrderItems PurchaseOrderItem[]
   salesOrderItems SalesOrderItem[]
@@ -500,7 +504,10 @@ model Expense {
   incurredAt  DateTime      @default(now())
   vendor      String?
   reference   String?
+  accountId   String?
+  paidAt      DateTime?
   tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account     MoneyAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   farm        Farm?         @relation(fields: [farmId], references: [id], onDelete: SetNull)
   cycle       ProductionCycle? @relation(fields: [cycleId], references: [id], onDelete: SetNull)
   createdAt   DateTime      @default(now())
@@ -654,7 +661,9 @@ model Revenue {
   occurredAt  DateTime    @default(now())
   customer    String?
   reference   String?
+  invoiceId   String?
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice     Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   farm        Farm?       @relation(fields: [farmId], references: [id], onDelete: SetNull)
   cycle       ProductionCycle? @relation(fields: [cycleId], references: [id], onDelete: SetNull)
   createdAt   DateTime    @default(now())
@@ -673,6 +682,7 @@ model Vendor {
   active      Boolean     @default(true)
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrders PurchaseOrder[]
+  payments    VendorPayment[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -735,6 +745,7 @@ model PurchaseOrder {
   request     PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
   warehouse   Warehouse?          @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   items       PurchaseOrderItem[]
+  payments    VendorPayment[]
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
 
@@ -831,9 +842,13 @@ model Customer {
   email       String?
   phone       String?
   address     String?
+  paymentTermsDays Int?
+  creditLimit Decimal?    @db.Decimal(16, 2)
   active      Boolean     @default(true)
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   salesOrders SalesOrder[]
+  invoices    Invoice[]
+  payments    PaymentReceived[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -858,6 +873,7 @@ model SalesOrder {
   customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
   warehouse   Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   items       SalesOrderItem[]
+  invoice     Invoice?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -892,10 +908,20 @@ model WorkforceMember {
   jobTitle    String?
   employmentType EmploymentType @default(PERMANENT)
   defaultHourlyRate Decimal? @db.Decimal(16, 4)
+  payBasis    PayBasis       @default(HOURLY)
+  dailyRate   Decimal?       @db.Decimal(16, 2)
+  monthlySalary Decimal?     @db.Decimal(16, 2)
+  pieceRate   Decimal?       @db.Decimal(16, 4)
+  pieceUnit   String?
+  paymentMethod PaymentMethod?
+  paymentAccount String?
+  startDate   DateTime?
   active      Boolean        @default(true)
   tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   farm        Farm?          @relation(fields: [farmId], references: [id], onDelete: SetNull)
   timesheets  Timesheet[]
+  advances    WorkerAdvance[]
+  payRunLines PayRunLine[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -915,6 +941,11 @@ model Timesheet {
   activity    String
   status      TimesheetStatus @default(SUBMITTED)
   notes       String?
+  // Explicit labour cost for daily-rate and piece-rate work; when null cost = hours x hourlyRate.
+  amount      Decimal?        @db.Decimal(16, 2)
+  pieceQuantity Decimal?      @db.Decimal(14, 3)
+  payRunId    String?
+  payRun      PayRun?         @relation(fields: [payRunId], references: [id], onDelete: SetNull)
   tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   worker      WorkforceMember @relation(fields: [workerId], references: [id], onDelete: Cascade)
   farm        Farm?           @relation(fields: [farmId], references: [id], onDelete: SetNull)

@@ -5,6 +5,7 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { Save, Trash2, Undo2 } from "lucide-react";
 import { saveUnitGeometryAction } from "@/app/v03-actions";
+import { ActionForm } from "@/components/action-form";
 
 type Coordinate = [number, number];
 
@@ -152,12 +153,12 @@ export function FarmMapEditor({ unit, otherBoundaries }: Props) {
       </div>
     </div>
     <div ref={container} style={{height:520,width:"100%"}}/>
-    <form action={saveUnitGeometryAction} style={{padding:16,display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+    <ActionForm action={saveUnitGeometryAction} reset={false} success="Boundary saved" style={{padding:16,display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
       <input type="hidden" name="unitId" value={unit.id}/>
       <input type="hidden" name="geometryGeoJson" value={geometry}/>
       <input type="hidden" name="areaHa" value={areaHa ? areaHa.toFixed(4) : ""}/>
       <div className="muted" style={{fontSize:13}}>{points.length} vertices {polygon ? "· " + areaHa.toFixed(2) + " ha mapped" : "· add at least 3 points"}</div>
       <button className="button" disabled={!polygon}><Save size={16}/> Save field boundary</button>
-    </form>
+    </ActionForm>
   </div>;
 }

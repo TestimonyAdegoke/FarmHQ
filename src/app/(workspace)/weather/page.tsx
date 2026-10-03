@@ -11,7 +11,7 @@ import { buildWeatherAdvisories } from "@/lib/weather-advisories";
 export const metadata = { title: "Weather" };
 
 export default async function WeatherPage() {
-  const ctx = await tenantContext();
+  const ctx = await tenantContext("farm.view");
   const farms = await db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true }, orderBy: { name: "asc" } });
   const located = farms.filter(f=>f.latitude!=null&&f.longitude!=null);
   const results = await Promise.all(located.map(async (farm) => {

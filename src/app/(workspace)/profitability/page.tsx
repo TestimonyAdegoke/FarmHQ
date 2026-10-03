@@ -3,13 +3,14 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { db } from "@/lib/db";
+import { labourCost } from "@/lib/ledger";
 import { tenantContext } from "@/lib/tenant";
 import { formatMoney, formatNumber } from "@/lib/utils";
 
 export const metadata = { title: "Profitability" };
 
 export default async function ProfitabilityPage() {
-  const ctx=await tenantContext();
+  const ctx=await tenantContext("finance.view");
   const cycles=await db.productionCycle.findMany({
     where:{tenantId:ctx.tenantId},
     include:{farm:true,unit:true,expenses:true,revenues:true,harvestRecords:true,timesheets:true,equipmentLogs:true,inventoryTxns:{include:{product:true}}},
@@ -18,7 +19,7 @@ export default async function ProfitabilityPage() {
   const rows=cycles.map(c=>{
     const direct=c.expenses.filter(e=>["APPROVED","PAID"].includes(e.status)).reduce((s,e)=>s+Number(e.amount),0);
     const inputs=c.inventoryTxns.filter(t=>["ISSUE","ADJUSTMENT_OUT","WASTE"].includes(t.type)).reduce((s,t)=>s+Number(t.quantity)*Number(t.unitCost||t.product.standardCost||0),0);
-    const labour=c.timesheets.filter(t=>t.status==="APPROVED").reduce((s,t)=>s+Number(t.hours)*Number(t.hourlyRate),0);
+    const labour=c.timesheets.filter(t=>t.status==="APPROVED").reduce((s,t)=>s+labourCost(t),0);
     const equipment=c.equipmentLogs.reduce((s,l)=>s+Number(l.cost||0),0);
     const cost=direct+inputs+labour+equipment;
     const revenue=c.revenues.reduce((s,r)=>s+Number(r.amount),0);

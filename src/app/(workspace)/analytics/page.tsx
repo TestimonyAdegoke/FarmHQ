@@ -8,7 +8,7 @@ import { formatMoney, formatNumber } from "@/lib/utils";
 export const metadata={title:"Analytics"};
 
 export default async function AnalyticsPage(){
- const ctx=await tenantContext();
+ const ctx=await tenantContext("analytics.view");
  const [farms,cycles,expenses,units]=await Promise.all([
   db.farm.findMany({where:{tenantId:ctx.tenantId,active:true},include:{_count:{select:{cycles:true,units:true}}},orderBy:{name:"asc"}}),
   db.productionCycle.findMany({where:{tenantId:ctx.tenantId},include:{expenses:true},orderBy:{createdAt:"desc"}}),

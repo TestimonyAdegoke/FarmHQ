@@ -1,6 +1,6 @@
 # FarmHQ
 
-> Current application milestone: **v0.4.0**
+> Current application milestone: **v0.5.0**
 
 **FarmHQ is the operating system for modern farm businesses.**
 
@@ -248,19 +248,91 @@ The PostGIS step enables the extension, adds the spatial polygon column/index to
 
 For production environments, establish a reviewed Prisma migration baseline before replacing an existing schema with `prisma db push`; `db:bootstrap` is intended for new environments.
 
+## v0.5.0 additions: run the farm business from a phone
+
+v0.5 closes the gaps between "recording operations" and "running a farm business", with the realities of
+sub-Saharan African farms in mind: cash and mobile-money sales, buyers on credit, casual day labour, wage advances,
+patchy connectivity and teams who work mostly on phones.
+
+### Sell & get paid
+- **Quick sale** (`/sales/quick`): one screen that sells from a store, issues the invoice and receipts the payment.
+  Walk-in customers need no setup; selling prices and live per-store stock are filled in automatically.
+- **Invoices** with sequential numbers (`INV-2026-00001`), discounts, tax/VAT, due dates from customer payment terms,
+  partial payments, receipts (`RCT-…`), voiding, print/PDF and **WhatsApp sharing**.
+- **Receivables**: unpaid/overdue filters, ageing buckets, customer statements with running balances, credit limits
+  and one-tap WhatsApp payment reminders. Customer payments are allocated to the oldest invoices first.
+- **Multi-line sales orders**. "Deliver & invoice" posts stock out and issues the invoice in one step.
+- Sales can no longer push stock below zero; the seller sees what is available in that store.
+- Revenue is now recognised from invoices (net of discount, excluding tax), so profitability and finance reports
+  stay consistent with what was actually billed.
+
+### Money
+- **Cash & bank** (`/accounts`): cash boxes, bank accounts and mobile-money wallets with opening balances, transfers
+  and a live balance computed from receipts, supplier payments, paid expenses, wage advances and payroll.
+- **Expense workflow**: draft → submitted → approved → paid (from a chosen account) or rejected/void.
+- **Payables**: supplier payments against purchase orders, with "owed to suppliers" totals and over-payment protection.
+- **Reports & export** (`/reports`): monthly profit & loss, best-selling products, top customers, spending by
+  category, and CSV downloads (Excel-friendly, formula-injection safe) for invoices, sales lines, payments, expenses,
+  income, supplier payments, stock, stock movements, labour and payroll.
+
+### People
+- **Pay bases** for workers: hourly, **daily rate**, **monthly salary** and **piece rate** (per crate, bag, kg).
+- **Daily attendance register**: tick who came, adjust hours (half days) or pieces, save once. Supervisors can take
+  attendance (new `workforce.attendance` permission); their entries wait for a manager's approval.
+- **Wage advances** recovered automatically in the next pay run.
+- **Payroll** (`/payroll`): pay runs from approved work and pro-rated salaries, allowances/deductions, approval,
+  payment from an account, printable payroll sheet and **payslips over WhatsApp**. Paid wages appear in expenses.
+- **Team & access**: change roles, remove members, revoke invitations, shareable invite links (WhatsApp), and
+  admin-issued single-use **password reset links** (no email service required). Owners are protected from being
+  demoted or removed by non-owners, and the last owner cannot be removed.
+- **Profile**: change name, add a phone number and change password. **Sign in with email or phone number**
+  (local `0803…` and international `+234803…` formats both work).
+
+### Phone, tablet and desktop
+- Grouped, role-aware navigation: people only see modules their role can open.
+- Phone bottom bar (Home · Tasks · **Sell** · Stock · More) and a full **More** menu, so every module is reachable
+  on a phone. Tablet layout with a narrower sidebar.
+- Create-forms collapse on small screens so lists and numbers come first; inputs are 16px (no iOS zoom) with
+  46px touch targets; compact 2-column metrics on phones.
+- Forms show validation and business-rule errors inline instead of crashing the page, lock while saving (no double
+  posts on slow networks) and stay locked until the page has hydrated.
+- Offline banner, workspace error/loading/not-found screens, and print styles for invoices, statements and payroll.
+- **Page-level permission checks** on every workspace page (previously any role could open any page).
+
+### Offline Field App
+- New offline record types: **daily attendance** and **poultry daily records** (one record per flock per day; a
+  re-capture replaces it).
+- The sync API now enforces role permissions per record type.
+- Items rejected by the server are shown with the reason and can be discarded instead of retrying forever.
+
+### Fixes
+- Inventory "on hand" was calculated from only the latest 100 ledger movements; it now uses the full ledger.
+- Profitability labour cost now respects daily and piece-rate pay.
+- Manual stock issues/adjustments can no longer drive stock negative.
+
+### v0.5 database steps
+
+The schema changes live in `prisma/v05-commerce.prisma` plus new fields on existing models. For a new database:
+
+```bash
+npm run db:bootstrap
+npm run db:seed        # optional: realistic demo farm, see scripts/seed-demo.ts for demo logins
+```
+
+For an existing v0.4 database, apply the schema with `npm run db:push` (or generate a reviewed migration with
+`npm run db:migrate`). If you use PostgreSQL row-level security, also apply `prisma/rls-v05.sql`.
+
 ## Next build layers
 
-The major remaining product layers are:
+Still outstanding after v0.5, in rough priority order:
 
-1. Satellite imagery / NDVI and vegetation-health overlays
-2. Barcode / QR scanner workflows for receiving, transfers, dispatch and stock counts
-3. Multi-line RFQ/quotation comparison and configurable procurement approval rules
-4. Dispatch, invoices, receivables and accounting integrations
-5. Livestock breeding genealogy, milk records and medication withdrawal periods
-6. Poultry FCR and cohort analytics
-7. Aquaculture biomass/FCR forecasting
-8. Native object/media storage for scouting photos, documents and compliance evidence
-9. Rich notification channels beyond webhooks, including email and mobile push
-10. Flutter mobile field client using the v0.4 offline-sync contract
-11. SaaS subscription billing, feature flags and platform super-admin
-12. AI farm assistant grounded in each tenant's operational data
+1. Server-side farm-scope enforcement (`Membership.farmScope` is stored but queries are not yet filtered by it)
+2. SMS / WhatsApp Business API delivery (today documents are shared through `wa.me` links the user sends)
+3. Mobile-money payment collection (M-Pesa, MTN MoMo, Paystack/Flutterwave) and bank-feed reconciliation
+4. Multi-line purchase orders, RFQ/quotation comparison and configurable approval limits
+5. Credit notes / returns that reverse stock and revenue, and customer deposits applied to future invoices
+6. Payroll statutory deductions per country (PAYE, pension, NHF, NSSF…) and bulk payment files
+7. Offline capture for sales, stock movements and animal health events; installable native wrapper
+8. Satellite imagery / NDVI, barcode/QR scanning for stock, media storage for photos and documents
+9. Localisation (French, Swahili, Hausa, Yoruba, Amharic…), local number/date formats per tenant
+10. Subscription billing, feature flags, platform super-admin and an AI farm assistant grounded in tenant data

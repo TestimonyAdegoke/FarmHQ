@@ -10,7 +10,7 @@ import { defaultHistoryRange, getWeatherHistory } from "@/lib/weather-history";
 export const metadata = { title: "Weather History" };
 
 export default async function WeatherHistoryPage({ searchParams }: { searchParams: Promise<{ farmId?: string; start?: string; end?: string }> }) {
-  const ctx = await tenantContext();
+  const ctx = await tenantContext("farm.view");
   const query = await searchParams;
   const farms = await db.farm.findMany({ where: { tenantId: ctx.tenantId, active: true, latitude: { not: null }, longitude: { not: null } }, orderBy: { name: "asc" } });
   const defaults = defaultHistoryRange();

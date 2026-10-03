@@ -5,11 +5,13 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { Role, FarmType, UnitType, CycleType, CycleStatus, TaskPriority, TaskStatus, ExpenseStatus, EquipmentStatus, CropActivityType, ActivityStatus, ObservationSeverity, ProcurementStatus, PurchaseOrderStatus, LivestockEventType, RevenueType, SalesOrderStatus, EmploymentType, TimesheetStatus, EquipmentLogType } from "@/generated/prisma/client";
+import { Role, FarmType, UnitType, CycleType, CycleStatus, TaskPriority, TaskStatus, ExpenseStatus, EquipmentStatus, CropActivityType, ActivityStatus, ObservationSeverity, ProcurementStatus, PurchaseOrderStatus, LivestockEventType, RevenueType, EmploymentType, PayBasis, PaymentMethod, TimesheetStatus, EquipmentLogType } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { audit, clearSession, createSession, requireSession } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { slugify } from "@/lib/utils";
+import { normalizePhone, slugify } from "@/lib/utils";
+import { attempt, fail } from "@/lib/forms";
+import { stockPositions } from "@/lib/ledger";
 
 function text(form: FormData, key: string) {
   return String(form.get(key) || "").trim();
@@ -79,10 +81,21 @@ export async function bootstrapAction(form: FormData) {
   redirect("/dashboard");
 }
 
+/** Matches "0803 000 0001", "2348030000001" and "+234 803 000 0001" to the same account; ambiguous matches are rejected. */
+async function findUserByPhone(input: string) {
+  const digits = normalizePhone(input).replace("+", "");
+  if (digits.length < 7) return null;
+  const matches = await db.user.findMany({ where: { phone: { endsWith: digits.slice(-10) } }, include: { memberships: { orderBy: { createdAt: "asc" } } }, take: 2 });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export async function loginAction(form: FormData) {
   const email = text(form, "email").toLowerCase();
   const password = text(form, "password");
-  const user = await db.user.findUnique({ where: { email }, include: { memberships: { orderBy: { createdAt: "asc" } } } });
+  // Field managers often have no email address, so a registered phone number also works as the login.
+  const user = email.includes("@")
+    ? await db.user.findUnique({ where: { email }, include: { memberships: { orderBy: { createdAt: "asc" } } } })
+    : await findUserByPhone(email);
   if (!user || !(await bcrypt.compare(password, user.passwordHash)) || !user.memberships.length) {
     redirect("/login?error=invalid");
   }
@@ -105,7 +118,7 @@ export async function switchTenantAction(form: FormData) {
   redirect("/dashboard");
 }
 
-export async function createFarmAction(form: FormData) {
+async function createFarmActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
   const name = z.string().min(2).parse(text(form, "name"));
@@ -126,7 +139,7 @@ export async function createFarmAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createUnitAction(form: FormData) {
+async function createUnitActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -147,7 +160,7 @@ export async function createUnitAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createCycleAction(form: FormData) {
+async function createCycleActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -178,7 +191,7 @@ export async function createCycleAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createTaskAction(form: FormData) {
+async function createTaskActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "task.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -203,7 +216,7 @@ export async function createTaskAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function updateTaskStatusAction(form: FormData) {
+async function updateTaskStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "task.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -216,7 +229,7 @@ export async function updateTaskStatusAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createWarehouseAction(form: FormData) {
+async function createWarehouseActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const warehouse = await db.warehouse.create({
@@ -226,7 +239,7 @@ export async function createWarehouseAction(form: FormData) {
   revalidatePath("/inventory");
 }
 
-export async function createProductAction(form: FormData) {
+async function createProductActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const product = await db.product.create({
@@ -238,13 +251,14 @@ export async function createProductAction(form: FormData) {
       unit: z.string().min(1).parse(text(form, "unit")),
       reorderLevel: numberValue(form, "reorderLevel"),
       standardCost: numberValue(form, "standardCost"),
+      sellingPrice: numberValue(form, "sellingPrice"),
     },
   });
   await audit("product.create", "Product", product.id, { name: product.name });
   revalidatePath("/inventory");
 }
 
-export async function postInventoryAction(form: FormData) {
+async function postInventoryActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
@@ -258,10 +272,15 @@ export async function postInventoryAction(form: FormData) {
   if (!warehouse || !product || (cycleId && !cycle)) throw new Error("Invalid warehouse, product or production cycle");
   const type = text(form, "type") as "RECEIPT" | "ISSUE" | "ADJUSTMENT_IN" | "ADJUSTMENT_OUT";
   if (!["RECEIPT","ISSUE","ADJUSTMENT_IN","ADJUSTMENT_OUT"].includes(type)) throw new Error("Invalid transaction type");
+  const quantity = z.number().positive().parse(numberValue(form, "quantity"));
+  if (type === "ISSUE" || type === "ADJUSTMENT_OUT") {
+    const onHand = (await stockPositions(session.tenantId)).byLocation.get(`${warehouseId}:${productId}`) || 0;
+    if (quantity > onHand + 1e-9) fail(`Only ${Math.max(0, Math.round(onHand * 1000) / 1000)} available in this store. Receive stock first or reduce the quantity.`);
+  }
   const tx = await db.inventoryTransaction.create({
     data: {
       tenantId: session.tenantId, warehouseId, productId, cycleId, type,
-      quantity: z.number().positive().parse(numberValue(form, "quantity")),
+      quantity,
       unitCost: numberValue(form, "unitCost"), lotNumber: optional(form, "lotNumber"), reference: optional(form, "reference"),
     },
   });
@@ -270,9 +289,12 @@ export async function postInventoryAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createExpenseAction(form: FormData) {
+async function createExpenseActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "finance.manage")) throw new Error("Forbidden");
+  const status = (optional(form, "status") as ExpenseStatus) || ExpenseStatus.APPROVED;
+  const accountId = status === ExpenseStatus.PAID ? optional(form, "accountId") : undefined;
+  if (accountId && !(await db.moneyAccount.findFirst({ where: { id: accountId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Payment account not found");
   const expense = await db.expense.create({
     data: {
       tenantId: session.tenantId,
@@ -281,7 +303,9 @@ export async function createExpenseAction(form: FormData) {
       category: z.string().min(2).parse(text(form, "category")),
       description: z.string().min(2).parse(text(form, "description")),
       amount: z.number().positive().parse(numberValue(form, "amount")),
-      status: (optional(form, "status") as ExpenseStatus) || ExpenseStatus.APPROVED,
+      status,
+      accountId,
+      paidAt: status === ExpenseStatus.PAID ? dateValue(form, "incurredAt") || new Date() : undefined,
       incurredAt: dateValue(form, "incurredAt") || new Date(),
       vendor: optional(form, "vendor"),
       reference: optional(form, "reference"),
@@ -289,10 +313,11 @@ export async function createExpenseAction(form: FormData) {
   });
   await audit("expense.create", "Expense", expense.id, { amount: expense.amount.toString(), category: expense.category });
   revalidatePath("/finance");
+  revalidatePath("/accounts");
   revalidatePath("/dashboard");
 }
 
-export async function createAnimalAction(form: FormData) {
+async function createAnimalActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -308,7 +333,7 @@ export async function createAnimalAction(form: FormData) {
   revalidatePath("/livestock");
 }
 
-export async function createEquipmentAction(form: FormData) {
+async function createEquipmentActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "equipment.manage")) throw new Error("Forbidden");
   const equipment = await db.equipment.create({
@@ -330,7 +355,7 @@ export async function createEquipmentAction(form: FormData) {
   revalidatePath("/equipment");
 }
 
-export async function createInvitationAction(form: FormData) {
+async function createInvitationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "team.manage")) throw new Error("Forbidden");
   const email = z.string().email().parse(text(form, "email").toLowerCase());
@@ -343,7 +368,7 @@ export async function createInvitationAction(form: FormData) {
   revalidatePath("/team");
 }
 
-export async function updateTenantAction(form: FormData) {
+async function updateTenantActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const name = z.string().min(2).parse(text(form, "name"));
@@ -355,7 +380,7 @@ export async function updateTenantAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createCropActivityAction(form: FormData) {
+async function createCropActivityActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
@@ -387,7 +412,7 @@ export async function createCropActivityAction(form: FormData) {
   revalidatePath("/production");
 }
 
-export async function updateCropActivityStatusAction(form: FormData) {
+async function updateCropActivityStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -399,7 +424,7 @@ export async function updateCropActivityStatusAction(form: FormData) {
   revalidatePath("/crop-operations");
 }
 
-export async function createScoutingObservationAction(form: FormData) {
+async function createScoutingObservationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const farmId = text(form, "farmId");
@@ -430,7 +455,7 @@ export async function createScoutingObservationAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function resolveScoutingObservationAction(form: FormData) {
+async function resolveScoutingObservationActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -442,7 +467,7 @@ export async function resolveScoutingObservationAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createHarvestRecordAction(form: FormData) {
+async function createHarvestRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "production.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
@@ -499,7 +524,7 @@ export async function createHarvestRecordAction(form: FormData) {
   revalidatePath("/profitability");
 }
 
-export async function createRevenueAction(form: FormData) {
+async function createRevenueActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "finance.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -525,7 +550,7 @@ export async function createRevenueAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createVendorAction(form: FormData) {
+async function createVendorActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
   const vendor = await db.vendor.create({
@@ -541,7 +566,7 @@ export async function createVendorAction(form: FormData) {
   revalidatePath("/procurement");
 }
 
-export async function createPurchaseRequestAction(form: FormData) {
+async function createPurchaseRequestActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -575,7 +600,7 @@ export async function createPurchaseRequestAction(form: FormData) {
   revalidatePath("/procurement");
 }
 
-export async function updatePurchaseRequestStatusAction(form: FormData) {
+async function updatePurchaseRequestStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -587,7 +612,7 @@ export async function updatePurchaseRequestStatusAction(form: FormData) {
   revalidatePath("/procurement");
 }
 
-export async function createPurchaseOrderAction(form: FormData) {
+async function createPurchaseOrderActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "procurement.manage")) throw new Error("Forbidden");
   const vendorId = text(form, "vendorId");
@@ -634,7 +659,7 @@ export async function createPurchaseOrderAction(form: FormData) {
   revalidatePath("/procurement");
 }
 
-export async function receivePurchaseOrderAction(form: FormData) {
+async function receivePurchaseOrderActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "procurement.manage") || !can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -670,7 +695,7 @@ export async function receivePurchaseOrderAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createAnimalHealthEventAction(form: FormData) {
+async function createAnimalHealthEventActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
   const animalId = text(form, "animalId");
@@ -694,7 +719,7 @@ export async function createAnimalHealthEventAction(form: FormData) {
   revalidatePath("/livestock");
 }
 
-export async function createPoultryDailyRecordAction(form: FormData) {
+async function createPoultryDailyRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
@@ -718,7 +743,7 @@ export async function createPoultryDailyRecordAction(form: FormData) {
   revalidatePath("/poultry");
 }
 
-export async function createAquacultureRecordAction(form: FormData) {
+async function createAquacultureRecordActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "livestock.manage")) throw new Error("Forbidden");
   const cycleId = text(form, "cycleId");
@@ -742,121 +767,7 @@ export async function createAquacultureRecordAction(form: FormData) {
   revalidatePath("/aquaculture");
 }
 
-export async function createCustomerAction(form: FormData) {
-  const { session, membership } = await requireSession();
-  if (!can(membership.role, "sales.manage")) throw new Error("Forbidden");
-  const customer = await db.customer.create({
-    data: {
-      tenantId: session.tenantId,
-      name: z.string().min(2).parse(text(form, "name")),
-      email: optional(form, "email"),
-      phone: optional(form, "phone"),
-      address: optional(form, "address"),
-    },
-  });
-  await audit("customer.create", "Customer", customer.id, { name: customer.name });
-  revalidatePath("/sales");
-}
-
-export async function createSalesOrderAction(form: FormData) {
-  const { session, membership } = await requireSession();
-  if (!can(membership.role, "sales.manage")) throw new Error("Forbidden");
-  const customerId = text(form, "customerId");
-  const farmId = optional(form, "farmId");
-  const cycleId = optional(form, "cycleId");
-  const warehouseId = optional(form, "warehouseId");
-  const productId = optional(form, "productId");
-  const [customer, farm, cycle, warehouse, product] = await Promise.all([
-    db.customer.findFirst({ where: { id: customerId, tenantId: session.tenantId }, select: { id: true } }),
-    farmId ? db.farm.findFirst({ where: { id: farmId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-    cycleId ? db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-    warehouseId ? db.warehouse.findFirst({ where: { id: warehouseId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-    productId ? db.product.findFirst({ where: { id: productId, tenantId: session.tenantId }, select: { id: true } }) : Promise.resolve({ id: "" }),
-  ]);
-  if (!customer || (farmId && !farm) || (cycleId && !cycle) || (warehouseId && !warehouse) || (productId && !product)) throw new Error("Invalid sales reference");
-  const orderNo = `SO-${new Date().getFullYear()}-${randomBytes(3).toString("hex").toUpperCase()}`;
-  const order = await db.salesOrder.create({
-    data: {
-      tenantId: session.tenantId,
-      farmId,
-      cycleId,
-      customerId,
-      warehouseId,
-      orderNo,
-      status: (optional(form, "status") as SalesOrderStatus) || SalesOrderStatus.CONFIRMED,
-      orderDate: dateValue(form, "orderDate") || new Date(),
-      deliveryDate: dateValue(form, "deliveryDate"),
-      notes: optional(form, "notes"),
-      items: {
-        create: {
-          tenantId: session.tenantId,
-          productId,
-          description: z.string().min(2).parse(text(form, "description")),
-          quantity: z.number().positive().parse(numberValue(form, "quantity")),
-          unit: z.string().min(1).parse(text(form, "unit")),
-          unitPrice: z.number().nonnegative().parse(numberValue(form, "unitPrice") || 0),
-        },
-      },
-    },
-  });
-  await audit("sales_order.create", "SalesOrder", order.id, { orderNo });
-  revalidatePath("/sales");
-}
-
-export async function fulfillSalesOrderAction(form: FormData) {
-  const { session, membership } = await requireSession();
-  if (!can(membership.role, "sales.manage")) throw new Error("Forbidden");
-  const id = text(form, "id");
-  const order = await db.salesOrder.findFirst({
-    where: { id, tenantId: session.tenantId },
-    include: { items: true, customer: true },
-  });
-  if (!order || order.status === SalesOrderStatus.FULFILLED || order.status === SalesOrderStatus.INVOICED || order.status === SalesOrderStatus.CANCELLED) throw new Error("Sales order cannot be fulfilled");
-  const total = order.items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
-  await db.$transaction(async (tx) => {
-    if (order.warehouseId) {
-      for (const item of order.items.filter(i => i.productId)) {
-        const outstanding = Number(item.quantity) - Number(item.fulfilledQty);
-        if (outstanding <= 0) continue;
-        await tx.inventoryTransaction.create({
-          data: {
-            tenantId: session.tenantId,
-            warehouseId: order.warehouseId!,
-            productId: item.productId!,
-            cycleId: order.cycleId,
-            type: "SALE",
-            quantity: outstanding,
-            unitCost: undefined,
-            reference: order.orderNo,
-            occurredAt: new Date(),
-          },
-        });
-        await tx.salesOrderItem.update({ where: { id: item.id }, data: { fulfilledQty: item.quantity } });
-      }
-    }
-    await tx.revenue.create({
-      data: {
-        tenantId: session.tenantId,
-        farmId: order.farmId,
-        cycleId: order.cycleId,
-        type: RevenueType.HARVEST_SALE,
-        description: `Sales order ${order.orderNo}`,
-        amount: total,
-        customer: order.customer.name,
-        reference: order.orderNo,
-        occurredAt: new Date(),
-      },
-    });
-    await tx.salesOrder.update({ where: { id: order.id }, data: { status: SalesOrderStatus.FULFILLED } });
-  });
-  await audit("sales_order.fulfill", "SalesOrder", order.id, { orderNo: order.orderNo, total });
-  revalidatePath("/sales");
-  revalidatePath("/inventory");
-  revalidatePath("/finance");
-  revalidatePath("/profitability");
-}
-
-export async function createWorkforceMemberAction(form: FormData) {
+async function createWorkforceMemberActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
   const farmId = optional(form, "farmId");
@@ -871,22 +782,35 @@ export async function createWorkforceMemberAction(form: FormData) {
       jobTitle: optional(form, "jobTitle"),
       employmentType: (optional(form, "employmentType") as EmploymentType) || EmploymentType.PERMANENT,
       defaultHourlyRate: numberValue(form, "defaultHourlyRate"),
+      payBasis: z.nativeEnum(PayBasis).parse(text(form, "payBasis") || "DAILY"),
+      dailyRate: numberValue(form, "dailyRate"),
+      monthlySalary: numberValue(form, "monthlySalary"),
+      pieceRate: numberValue(form, "pieceRate"),
+      pieceUnit: optional(form, "pieceUnit"),
+      paymentMethod: optional(form, "paymentMethod") ? z.nativeEnum(PaymentMethod).parse(text(form, "paymentMethod")) : undefined,
+      paymentAccount: optional(form, "paymentAccount"),
+      startDate: dateValue(form, "startDate"),
     },
   });
   await audit("workforce.member.create", "WorkforceMember", worker.id, { name: worker.name });
   revalidatePath("/workforce");
 }
 
-export async function createTimesheetAction(form: FormData) {
+async function createTimesheetActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
   const workerId = text(form, "workerId");
-  const worker = await db.workforceMember.findFirst({ where: { id: workerId, tenantId: session.tenantId }, select: { id: true, defaultHourlyRate: true, farmId: true } });
+  const worker = await db.workforceMember.findFirst({ where: { id: workerId, tenantId: session.tenantId }, select: { id: true, defaultHourlyRate: true, farmId: true, payBasis: true, dailyRate: true, pieceRate: true } });
   if (!worker) throw new Error("Worker not found");
   const farmId = optional(form, "farmId") || worker.farmId || undefined;
   const cycleId = optional(form, "cycleId");
   if (cycleId && !(await db.productionCycle.findFirst({ where: { id: cycleId, tenantId: session.tenantId }, select: { id: true } }))) throw new Error("Production cycle not found");
   const hourlyRate = numberValue(form, "hourlyRate") ?? Number(worker.defaultHourlyRate || 0);
+  const pieceQuantity = numberValue(form, "pieceQuantity");
+  // Daily-rated and piece-rate workers are costed by the day / unit rather than by the hour.
+  const amount = numberValue(form, "amount")
+    ?? (worker.payBasis === "DAILY" && worker.dailyRate != null && numberValue(form, "hourlyRate") == null ? Math.round(Number(worker.dailyRate) * (numberValue(form, "hours") || 8) / 8 * 100) / 100 : undefined)
+    ?? (worker.payBasis === "PIECE_RATE" && worker.pieceRate != null && pieceQuantity != null ? Number(worker.pieceRate) * pieceQuantity : undefined);
   const timesheet = await db.timesheet.create({
     data: {
       tenantId: session.tenantId,
@@ -897,6 +821,8 @@ export async function createTimesheetAction(form: FormData) {
       hours: z.number().positive().parse(numberValue(form, "hours")),
       hourlyRate: z.number().nonnegative().parse(hourlyRate),
       activity: z.string().min(2).parse(text(form, "activity")),
+      amount,
+      pieceQuantity,
       status: (optional(form, "status") as TimesheetStatus) || TimesheetStatus.SUBMITTED,
       notes: optional(form, "notes"),
     },
@@ -906,7 +832,7 @@ export async function createTimesheetAction(form: FormData) {
   revalidatePath("/profitability");
 }
 
-export async function updateTimesheetStatusAction(form: FormData) {
+async function updateTimesheetStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "workforce.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -918,7 +844,7 @@ export async function updateTimesheetStatusAction(form: FormData) {
   revalidatePath("/profitability");
 }
 
-export async function createEquipmentLogAction(form: FormData) {
+async function createEquipmentLogActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "equipment.manage")) throw new Error("Forbidden");
   const equipmentId = text(form, "equipmentId");
@@ -994,4 +920,131 @@ export async function acceptInvitationAction(form: FormData) {
 
   await createSession({ userId: user.id, tenantId: invitation.tenantId, role: membership.role });
   redirect("/dashboard");
+}
+
+
+// Public actions return { ok, error } so forms can show a readable message instead of a crashed page.
+
+export async function createFarmAction(form: FormData) {
+  return attempt(async () => { await createFarmActionImpl(form); });
+}
+
+export async function createUnitAction(form: FormData) {
+  return attempt(async () => { await createUnitActionImpl(form); });
+}
+
+export async function createCycleAction(form: FormData) {
+  return attempt(async () => { await createCycleActionImpl(form); });
+}
+
+export async function createTaskAction(form: FormData) {
+  return attempt(async () => { await createTaskActionImpl(form); });
+}
+
+export async function updateTaskStatusAction(form: FormData) {
+  return attempt(async () => { await updateTaskStatusActionImpl(form); });
+}
+
+export async function createWarehouseAction(form: FormData) {
+  return attempt(async () => { await createWarehouseActionImpl(form); });
+}
+
+export async function createProductAction(form: FormData) {
+  return attempt(async () => { await createProductActionImpl(form); });
+}
+
+export async function postInventoryAction(form: FormData) {
+  return attempt(async () => { await postInventoryActionImpl(form); });
+}
+
+export async function createExpenseAction(form: FormData) {
+  return attempt(async () => { await createExpenseActionImpl(form); });
+}
+
+export async function createAnimalAction(form: FormData) {
+  return attempt(async () => { await createAnimalActionImpl(form); });
+}
+
+export async function createEquipmentAction(form: FormData) {
+  return attempt(async () => { await createEquipmentActionImpl(form); });
+}
+
+export async function createInvitationAction(form: FormData) {
+  return attempt(async () => { await createInvitationActionImpl(form); });
+}
+
+export async function updateTenantAction(form: FormData) {
+  return attempt(async () => { await updateTenantActionImpl(form); });
+}
+
+export async function createCropActivityAction(form: FormData) {
+  return attempt(async () => { await createCropActivityActionImpl(form); });
+}
+
+export async function updateCropActivityStatusAction(form: FormData) {
+  return attempt(async () => { await updateCropActivityStatusActionImpl(form); });
+}
+
+export async function createScoutingObservationAction(form: FormData) {
+  return attempt(async () => { await createScoutingObservationActionImpl(form); });
+}
+
+export async function resolveScoutingObservationAction(form: FormData) {
+  return attempt(async () => { await resolveScoutingObservationActionImpl(form); });
+}
+
+export async function createHarvestRecordAction(form: FormData) {
+  return attempt(async () => { await createHarvestRecordActionImpl(form); });
+}
+
+export async function createRevenueAction(form: FormData) {
+  return attempt(async () => { await createRevenueActionImpl(form); });
+}
+
+export async function createVendorAction(form: FormData) {
+  return attempt(async () => { await createVendorActionImpl(form); });
+}
+
+export async function createPurchaseRequestAction(form: FormData) {
+  return attempt(async () => { await createPurchaseRequestActionImpl(form); });
+}
+
+export async function updatePurchaseRequestStatusAction(form: FormData) {
+  return attempt(async () => { await updatePurchaseRequestStatusActionImpl(form); });
+}
+
+export async function createPurchaseOrderAction(form: FormData) {
+  return attempt(async () => { await createPurchaseOrderActionImpl(form); });
+}
+
+export async function receivePurchaseOrderAction(form: FormData) {
+  return attempt(async () => { await receivePurchaseOrderActionImpl(form); });
+}
+
+export async function createAnimalHealthEventAction(form: FormData) {
+  return attempt(async () => { await createAnimalHealthEventActionImpl(form); });
+}
+
+export async function createPoultryDailyRecordAction(form: FormData) {
+  return attempt(async () => { await createPoultryDailyRecordActionImpl(form); });
+}
+
+export async function createAquacultureRecordAction(form: FormData) {
+  return attempt(async () => { await createAquacultureRecordActionImpl(form); });
+}
+
+export async function createWorkforceMemberAction(form: FormData) {
+  return attempt(async () => { await createWorkforceMemberActionImpl(form); });
+}
+
+export async function createTimesheetAction(form: FormData) {
+  return attempt(async () => { await createTimesheetActionImpl(form); });
+}
+
+export async function updateTimesheetStatusAction(form: FormData) {
+  return attempt(async () => { await updateTimesheetStatusActionImpl(form); });
+}
+
+export async function createEquipmentLogAction(form: FormData) {
+  return attempt(async () => { await createEquipmentLogActionImpl(form); });
 }

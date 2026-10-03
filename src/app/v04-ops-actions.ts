@@ -13,6 +13,7 @@ import { audit, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runNotificationDeliveries, validateWebhookUrl } from "@/lib/notification-delivery";
 import { can } from "@/lib/permissions";
+import { attempt } from "@/lib/forms";
 
 function text(form: FormData, key: string) {
   return String(form.get(key) || "").trim();
@@ -54,7 +55,7 @@ async function warehouseStock(tenantId: string, warehouseId: string, productId: 
   }, 0);
 }
 
-export async function createStockCountSessionAction(form: FormData) {
+async function createStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const warehouseId = text(form, "warehouseId");
@@ -78,7 +79,7 @@ export async function createStockCountSessionAction(form: FormData) {
   revalidatePath("/stock-control");
 }
 
-export async function addStockCountLineAction(form: FormData) {
+async function addStockCountLineActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const sessionId = text(form, "sessionId");
@@ -122,7 +123,7 @@ export async function addStockCountLineAction(form: FormData) {
   revalidatePath("/stock-control");
 }
 
-export async function closeStockCountSessionAction(form: FormData) {
+async function closeStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -176,7 +177,7 @@ export async function closeStockCountSessionAction(form: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function cancelStockCountSessionAction(form: FormData) {
+async function cancelStockCountSessionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "inventory.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -190,7 +191,7 @@ export async function cancelStockCountSessionAction(form: FormData) {
   revalidatePath("/stock-control");
 }
 
-export async function createComplianceActionAction(form: FormData) {
+async function createComplianceActionActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const complianceRecordId = text(form, "complianceRecordId");
@@ -221,7 +222,7 @@ export async function createComplianceActionAction(form: FormData) {
   revalidatePath("/compliance");
 }
 
-export async function updateComplianceActionStatusAction(form: FormData) {
+async function updateComplianceActionStatusActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "farm.manage") && !can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -240,7 +241,7 @@ export async function updateComplianceActionStatusAction(form: FormData) {
   revalidatePath("/compliance");
 }
 
-export async function createNotificationEndpointAction(form: FormData) {
+async function createNotificationEndpointActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const url = validateWebhookUrl(text(form, "url"));
@@ -257,7 +258,7 @@ export async function createNotificationEndpointAction(form: FormData) {
   revalidatePath("/automations");
 }
 
-export async function toggleNotificationEndpointAction(form: FormData) {
+async function toggleNotificationEndpointActionImpl(form: FormData) {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const id = text(form, "id");
@@ -268,10 +269,49 @@ export async function toggleNotificationEndpointAction(form: FormData) {
   revalidatePath("/automations");
 }
 
-export async function deliverNotificationsAction() {
+async function deliverNotificationsActionImpl() {
   const { session, membership } = await requireSession();
   if (!can(membership.role, "tenant.manage")) throw new Error("Forbidden");
   const result = await runNotificationDeliveries(session.tenantId);
   await audit("notification_delivery.run", "NotificationEndpoint", undefined, result);
   revalidatePath("/automations");
+}
+
+
+// Public actions return { ok, error } so forms can show a readable message instead of a crashed page.
+
+export async function createStockCountSessionAction(form: FormData) {
+  return attempt(async () => { await createStockCountSessionActionImpl(form); });
+}
+
+export async function addStockCountLineAction(form: FormData) {
+  return attempt(async () => { await addStockCountLineActionImpl(form); });
+}
+
+export async function closeStockCountSessionAction(form: FormData) {
+  return attempt(async () => { await closeStockCountSessionActionImpl(form); });
+}
+
+export async function cancelStockCountSessionAction(form: FormData) {
+  return attempt(async () => { await cancelStockCountSessionActionImpl(form); });
+}
+
+export async function createComplianceActionAction(form: FormData) {
+  return attempt(async () => { await createComplianceActionActionImpl(form); });
+}
+
+export async function updateComplianceActionStatusAction(form: FormData) {
+  return attempt(async () => { await updateComplianceActionStatusActionImpl(form); });
+}
+
+export async function createNotificationEndpointAction(form: FormData) {
+  return attempt(async () => { await createNotificationEndpointActionImpl(form); });
+}
+
+export async function toggleNotificationEndpointAction(form: FormData) {
+  return attempt(async () => { await toggleNotificationEndpointActionImpl(form); });
+}
+
+export async function deliverNotificationsAction() {
+  return attempt(async () => { await deliverNotificationsActionImpl(); });
 }
