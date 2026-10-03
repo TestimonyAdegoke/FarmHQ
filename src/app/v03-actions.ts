@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
-  ActivityStatus,
   AutomationSeverity,
   AutomationTrigger,
   ComplianceRecordType,
